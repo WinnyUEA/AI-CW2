@@ -16,12 +16,13 @@ CREATE TABLE chat_history (
 
 
 -- Stores UK train station data
-CREATE TABLE stations (
+CREATE TABLE stations(
     station_code VARCHAR(10) PRIMARY KEY,
     station_name VARCHAR(100) NOT NULL,
     full_name TEXT,
     alias VARCHAR(50),
-    tiploc_code VARCHAR(10)
+    tiploc_code VARCHAR(10),
+    code TEXT
 );
 
 -- Logical routes between two stations 
