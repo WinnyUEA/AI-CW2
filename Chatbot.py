@@ -7,13 +7,14 @@ from typing import Dict, List, Optional, Tuple
 import warnings
 import nltk
 import csv
-nltk.download('averaged_perceptron_tagger_eng')
-nltk.download('punkt')
-nltk.download('averaged_perceptron_tagger')
-nltk.download('averaged_perceptron_tagger_eng')
-nltk.download('wordnet')
-nltk.download('maxent_ne_chunker')
-nltk.download('words')
+import random
+# nltk.download('averaged_perceptron_tagger_eng')
+# nltk.download('punkt')
+# nltk.download('averaged_perceptron_tagger')
+# nltk.download('averaged_perceptron_tagger_eng')
+# nltk.download('wordnet')
+# nltk.download('maxent_ne_chunker')
+# nltk.download('words')
 
 warnings.filterwarnings('ignore')
 
@@ -212,51 +213,107 @@ class RobustTrainTicketChatbot:
         except Exception as e:
             print(f"Database error: {str(e)}")
 
+            
+
     def generate_response(self, user_input: str, user_id: str = "default") -> str:
         try:
             self.log_conversation(user_id, "user", user_input)
 
+            # Short exit check
+            if any(word in user_input.lower() for word in ['bye', 'goodbye', 'exit', 'quit']):
+                self.current_state = self.STATES['FAREWELL']
+                return random.choice(self.farewells)
+
+            # Begin conversation
             if self.current_state == self.STATES['GREETING']:
                 self.conversation_state['user_id'] = user_id
                 self.current_state = self.STATES['GET_DEPARTURE']
-                return self.greetings[0]
+                return random.choice(self.greetings) + " What station are you leaving from?"
 
-            if any(word in user_input.lower() for word in ['bye', 'goodbye', 'exit', 'quit']):
+            elif self.current_state == self.STATES['GET_DEPARTURE']:
+                self.conversation_state['departure'] = user_input
+                self.current_state = self.STATES['GET_DESTINATION']
+                return "Thanks! Where would you like to go?"
+
+            elif self.current_state == self.STATES['GET_DESTINATION']:
+                self.conversation_state['destination'] = user_input
+                self.current_state = self.STATES['GET_DATE']
+                return "Got it. What date would you like to travel? (e.g., April 25th)"
+
+            elif self.current_state == self.STATES['GET_DATE']:
+                self.conversation_state['travel_date'] = user_input
+                self.current_state = self.STATES['GET_TIME']
+                return "And what time are you planning to depart? (e.g., 10:00 AM)"
+
+            elif self.current_state == self.STATES['GET_TIME']:
+                self.conversation_state['travel_time'] = user_input
+                self.current_state = self.STATES['CONFIRM_DETAILS']
+                summary = f"""
+    Just to confirm:
+    - From: {self.conversation_state['departure']}
+    - To: {self.conversation_state['destination']}
+    - Date: {self.conversation_state['travel_date']}
+    - Time: {self.conversation_state['travel_time']}
+
+    Is this correct? (yes/no)
+    """
+                return summary.strip()
+
+            elif self.current_state == self.STATES['CONFIRM_DETAILS']:
+                if 'yes' in user_input.lower():
+                    self.current_state = self.STATES['PRESENT_RESULTS']
+                    return "Awesome! Searching for the cheapest train tickets now... 🚄 (mock results coming soon!)"
+                else:
+                    self.current_state = self.STATES['GET_DEPARTURE']
+                    return "Okay, let's start over. Where are you leaving from?"
+
+            elif self.current_state == self.STATES['PRESENT_RESULTS']:
+                if 'no' in user_input.lower() or 'start over' in user_input.lower():
+                    self.current_state = self.STATES['GET_DEPARTURE']
+                    return "Okay, let's start over. Where are you leaving from?"
+                elif 'yes' in user_input.lower() or 'book' in user_input.lower():
+                    self.current_state = self.STATES['BOOKING']
+                    return "Great! Booking functionality would go here in a real implementation."
+                else:
+                    return "I didn't understand that. Would you like to book one of these options or start over?"
+
+            elif self.current_state == self.STATES['BOOKING']:
                 self.current_state = self.STATES['FAREWELL']
-                return self.farewells[0]
+                return "Your booking is complete! " + random.choice(self.farewells)
 
-            return "I'm sorry, I didn't understand that. Could you please rephrase?"
+            elif self.current_state == self.STATES['FAREWELL']:
+                return random.choice(self.farewells)
+
+            return "I'm not quite sure what you mean. Could you try rephrasing?"
 
         except Exception as e:
             print(f"Error generating response: {str(e)}")
             return "I encountered an error. Please try again."
-    def chat(self, message):
-        # For now, just echo back
-        return f"You said: {message}"
+
 
 
 if __name__ == "__main__":
     print("Initializing robust chatbot...")
     chatbot = RobustTrainTicketChatbot()
 
-    # print("\nChatbot:", chatbot.generate_response("Hello"))
+    print("Chatbot:", chatbot.generate_response("Hello"))
 
-    # print("Welcome to TrainBot! Type 'exit' to quit.")
-    # while True:
-    #     user_input = input("You: ")
-    #     if user_input.lower() == 'exit':
-    #         print("TrainBot: Goodbye!")
-    #         break
-    #     response = chatbot.chat(user_input)
-    #     print("TrainBot:", response)
+    print("\n🚆 Welcome to TrainBot! Type 'exit' to quit.")
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() == 'exit':
+            print("TrainBot: Goodbye!")
+            break
+        response = chatbot.generate_response(user_input)
+        print("TrainBot:", response)
 
-    test_phrases = [
-        "I want to travel from London to Cambridge",
-        "on March 15th",
-        "in the morning",
-        "yes that's correct"
-    ]
+    # test_phrases = [
+    #     "I want to travel from London to Cambridge",
+    #     "on March 15th",
+    #     "in the morning",
+    #     "yes that's correct"
+    # ]
 
-    for phrase in test_phrases:
-        print("\nUser:", phrase)
-        print("Chatbot:", chatbot.generate_response(phrase))
+    # for phrase in test_phrases:
+    #     print("\nUser:", phrase)
+    #     print("Chatbot:", chatbot.generate_response(phrase))
