@@ -1,319 +1,223 @@
-import re
-from datetime import datetime, timedelta
-import json
-from difflib import get_close_matches
-import sqlite3
-from typing import Dict, List, Optional, Tuple
-import warnings
-import nltk
-import csv
-import random
-# nltk.download('averaged_perceptron_tagger_eng')
-# nltk.download('punkt')
-# nltk.download('averaged_perceptron_tagger')
-# nltk.download('averaged_perceptron_tagger_eng')
-# nltk.download('wordnet')
-# nltk.download('maxent_ne_chunker')
-# nltk.download('words')
+"""
+Train Ticket Chatbot with Delay Prediction
+Simplified version without machine learning dependencies
+"""
 
-warnings.filterwarnings('ignore')
+import re
+import sqlite3
+import random
+from typing import Dict, List, Optional
+import spacy
+from spacy.matcher import Matcher
+
+# Initialize spaCy for NLP
+try:
+    nlp = spacy.load('en_core_web_sm')
+    print("NLP model loaded successfully.")
+except:
+    print("spaCy not available. Some features will be limited.")
+    nlp = None
 
 class RobustTrainTicketChatbot:
     def __init__(self):
+        """Initialize the chatbot with all required components"""
         # Conversation messages
-        self.greetings = [
-            "Hello! I'm your train ticket assistant. How can I help you today?",
-            "Hi there! I can help you find the cheapest train tickets. What's your journey plan?",
-            "Welcome to the train ticket chatbot! Where are you traveling to?"
-        ]
-
-        self.farewells = [
-            "Thank you for using our service. Have a safe journey!",
-            "Happy travels! Don't hesitate to come back if you need more help.",
-            "Enjoy your trip! Come back anytime you need train tickets."
-        ]
+        self.greetings = ["Hello! How can I help with your train journey today?"]
+        self.farewells = ["Thank you for using our service. Safe travels!"]
 
         # Conversation states
         self.STATES = {
             'GREETING': 0,
             'GET_DEPARTURE': 1,
             'GET_DESTINATION': 2,
-            'GET_DATE': 3,
-            'GET_TIME': 4,
-            'GET_RETURN_DATE': 5,
-            'GET_RETURN_TIME': 6,
-            'CONFIRM_DETAILS': 7,
-            'SEARCH_TICKETS': 8,
-            'PRESENT_RESULTS': 9,
-            'BOOKING': 10,
-            'FAREWELL': 11
+            'DELAY_INQUIRY': 3,
+            'GET_TRAIN_INFO': 4,
+            'GET_CURRENT_STATION': 5,
+            'GET_DELAY_DURATION': 6,
+            'PREDICT_ARRIVAL': 7,
+            'FAREWELL': 8
         }
-
+        
         self.current_state = self.STATES['GREETING']
         self.conversation_state = {}
-        #self.knowledge_base = self.load_knowledge_base('knowledge_base.csv')
-        self.stations = self.load_stations('D:/Documents/Uni Stuff/Data Science/AI/CW 2/stations.csv')
-        self.initialize_nlp_components()
-        self.db_conn = sqlite3.connect('chatbot_db.sqlite', check_same_thread=False)
+        
+        # Initialize stations and schedules
+        self.stations = [
+            "Norwich", "Diss", "Stowmarket", "Ipswich",
+            "Manningtree", "Colchester", "Chelmsford",
+            "Stratford", "London Liverpool Street"
+        ]
+        
+        self.initialize_train_schedules()
+        
+        # Set up NLP
+        if nlp:
+            self.matcher = Matcher(nlp.vocab)
+            self.initialize_nlp_matchers()
+        
+        # Initialize database
+        self.db_conn = sqlite3.connect(':memory:')  # Using in-memory database for simplicity
         self.create_tables()
 
-    def load_knowledge_base(self, path: str) -> Dict[str, str]:
-        knowledge = {}
-        try:
-            with open(path, newline='', encoding='utf-8') as csvfile:
-                reader = csv.DictReader(csvfile)
-                for row in reader:
-                    question = row.get('question') or ''
-                    answer = row.get('answer') or ''
-                    knowledge[question.lower().strip()] = answer.strip()
-        except Exception as e:
-            print(f"Error loading knowledge base: {e}")
-        return knowledge
-
-    def load_stations(self, path: str) -> List[str]:
-        stations = []
-        try:
-            with open(path, newline='', encoding='utf-8') as csvfile:
-                reader = csv.reader(csvfile)
-                for row in reader:
-                    if row:
-                        stations.append(row[0].strip())
-        except Exception as e:
-            print(f"Error loading stations: {e}")
-        return stations
-
-    def initialize_nlp_components(self):
-        try:
-            try:
-                import spacy
-                try:
-                    self.nlp = spacy.load('en_core_web_sm')
-                    print("spaCy NLP model loaded successfully.")
-                except:
-                    self.nlp = None
-                    print("spaCy model not found. Some advanced features will be disabled.")
-            except ImportError:
-                self.nlp = None
-                print("spaCy not installed. Some advanced features will be disabled.")
-
-            try:
-                from nltk.stem import PorterStemmer, WordNetLemmatizer
-                self.stemmer = PorterStemmer()
-                self.lemmatizer = WordNetLemmatizer()
-                print("NLTK components initialized successfully.")
-            except ImportError:
-                self.stemmer = None
-                self.lemmatizer = None
-                print("NLTK not installed. Some features will be disabled.")
-
-            self.nlp_available = self.nlp is not None or (self.stemmer and self.lemmatizer)
-
-        except Exception as e:
-            print(f"Warning: NLP initialization encountered an error - {str(e)}")
-            self.nlp_available = False
-
-    def basic_text_processing(self, text: str) -> Dict:
-        tokens = text.split()
-        return {
-            'tokens': tokens,
-            'pos_tags': [(token, 'UNK') for token in tokens],
-            'lemmas': tokens,
-            'stems': tokens,
-            'entities': []
-        }
-
-    def advanced_nlp_processing(self, text: str) -> Dict:
-        result = {
-            'tokens': [],
-            'pos_tags': [],
-            'lemmas': [],
-            'stems': [],
-            'entities': []
-        }
-
-        try:
-            tokens = nltk.word_tokenize(text)
-            result['tokens'] = tokens
-            result['pos_tags'] = nltk.pos_tag(tokens)
-
-            if self.lemmatizer:
-                result['lemmas'] = [self.lemmatizer.lemmatize(token) for token in tokens]
-            else:
-                result['lemmas'] = tokens
-
-            if self.stemmer:
-                result['stems'] = [self.stemmer.stem(token) for token in tokens]
-            else:
-                result['stems'] = tokens
-
-            if self.nlp:
-                doc = self.nlp(text)
-                result['entities'] = [(ent.text, ent.label_) for ent in doc.ents]
-
-            return result if any(result.values()) else self.basic_text_processing(text)
-
-        except Exception as e:
-            print(f"NLP processing error: {str(e)}")
-            return self.basic_text_processing(text)
-
-    def log_conversation(self, user_id: str, message_type: str, content: str):
-        try:
-            nlp_results = self.advanced_nlp_processing(content)
-
-            cursor = self.db_conn.cursor()
-            cursor.execute('''
-                INSERT INTO conversations (
-                    user_id, timestamp, message_type, content,
-                    tokens, pos_tags, lemmas, stems, entities
-                )
-                VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                user_id,
-                message_type,
-                content,
-                json.dumps(nlp_results['tokens']),
-                json.dumps(nlp_results['pos_tags']),
-                json.dumps(nlp_results['lemmas']),
-                json.dumps(nlp_results['stems']),
-                json.dumps(nlp_results['entities'])
-            ))
-            self.db_conn.commit()
-        except Exception as e:
-            print(f"Failed to log conversation: {str(e)}")
-
     def create_tables(self):
+        """Create database tables for conversation logging"""
+        cursor = self.db_conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_input TEXT,
+                bot_response TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        self.db_conn.commit()
+
+    def initialize_train_schedules(self):
+        """Initialize train schedule data"""
+        self.train_schedules = {
+            "Norwich-LST": {
+                "stations": self.stations,
+                "times": [0, 25, 40, 50, 65, 80, 100, 115, 120]  # Minutes from origin
+            },
+            "LST-Norwich": {
+                "stations": list(reversed(self.stations)),
+                "times": [0, 5, 25, 45, 60, 70, 85, 100, 120]
+            }
+        }
+
+    def initialize_nlp_matchers(self):
+        """Set up NLP patterns for travel phrases"""
+        # Pattern for "from <station>"
+        self.matcher.add("DEPARTURE", [
+            [{"LOWER": {"IN": ["from", "departing"]}}, {"ENT_TYPE": "GPE"}]
+        ])
+        # Pattern for "to <station>"
+        self.matcher.add("DESTINATION", [
+            [{"LOWER": {"IN": ["to", "going"]}}, {"ENT_TYPE": "GPE"}]
+        ])
+
+    def match_station(self, text: str) -> Optional[str]:
+        """Match user input to known station names"""
+        text = text.lower()
+        for station in self.stations:
+            if text in station.lower():
+                return station
+        return None
+
+    def predict_arrival(self, route: str, current_station: str, delay: int) -> Optional[int]:
+        """Predict arrival time at destination with delay"""
         try:
-            cursor = self.db_conn.cursor()
+            schedule = self.train_schedules[route]
+            current_idx = schedule["stations"].index(current_station)
+            dest_idx = schedule["stations"].index("London Liverpool Street")
+            remaining_time = schedule["times"][dest_idx] - schedule["times"][current_idx]
+            return remaining_time + delay
+        except:
+            return None
 
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS conversations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id TEXT,
-                    timestamp DATETIME,
-                    message_type TEXT,
-                    content TEXT,
-                    tokens TEXT,
-                    pos_tags TEXT,
-                    lemmas TEXT,
-                    stems TEXT,
-                    entities TEXT
-                )
-            ''')
+    def log_conversation(self, user_input: str, response: str):
+        """Log conversation to database"""
+        cursor = self.db_conn.cursor()
+        cursor.execute('''
+            INSERT INTO conversations (user_input, bot_response)
+            VALUES (?, ?)
+        ''', (user_input, response))
+        self.db_conn.commit()
 
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    user_id TEXT PRIMARY KEY,
-                    preferred_departure_station TEXT,
-                    preferred_destination_station TEXT,
-                    travel_times TEXT
-                )
-            ''')
-
-            self.db_conn.commit()
-        except Exception as e:
-            print(f"Database error: {str(e)}")
-
-            
-
-    def generate_response(self, user_input: str, user_id: str = "default") -> str:
-        try:
-            self.log_conversation(user_id, "user", user_input)
-
-            # Short exit check
-            if any(word in user_input.lower() for word in ['bye', 'goodbye', 'exit', 'quit']):
-                self.current_state = self.STATES['FAREWELL']
-                return random.choice(self.farewells)
-
-            # Begin conversation
-            if self.current_state == self.STATES['GREETING']:
-                self.conversation_state['user_id'] = user_id
-                self.current_state = self.STATES['GET_DEPARTURE']
-                return random.choice(self.greetings) + " What station are you leaving from?"
-
-            elif self.current_state == self.STATES['GET_DEPARTURE']:
-                self.conversation_state['departure'] = user_input
+    def generate_response(self, user_input: str) -> str:
+        """Generate appropriate response based on current state"""
+        # Log the conversation
+        self.log_conversation(user_input, "")
+        
+        # Detect intent
+        intent = self.detect_intent(user_input)
+        
+        if intent == "farewell":
+            self.current_state = self.STATES['FAREWELL']
+            return random.choice(self.farewells)
+        elif intent == "delay_inquiry":
+            self.current_state = self.STATES['DELAY_INQUIRY']
+            return "I can help with delay predictions. Which train are you on? (Norwich to London or London to Norwich)"
+        
+        # State machine logic
+        if self.current_state == self.STATES['GREETING']:
+            self.current_state = self.STATES['GET_DEPARTURE']
+            return random.choice(self.greetings)
+        
+        elif self.current_state == self.STATES['GET_DEPARTURE']:
+            station = self.match_station(user_input)
+            if station:
+                self.conversation_state['departure'] = station
                 self.current_state = self.STATES['GET_DESTINATION']
-                return "Thanks! Where would you like to go?"
+                return f"Departing from {station}. Where to?"
+            return "Station not recognized. Please try again."
+        
+        elif self.current_state == self.STATES['GET_DESTINATION']:
+            station = self.match_station(user_input)
+            if station:
+                self.conversation_state['destination'] = station
+                return f"Great! From {self.conversation_state['departure']} to {station}. How else can I help?"
+            return "Station not recognized. Please try again."
+        
+        elif self.current_state == self.STATES['DELAY_INQUIRY']:
+            if "norwich" in user_input.lower() and "london" in user_input.lower():
+                self.conversation_state['route'] = "Norwich-LST"
+            elif "london" in user_input.lower() and "norwich" in user_input.lower():
+                self.conversation_state['route'] = "LST-Norwich"
+            else:
+                return "Please specify 'Norwich to London' or 'London to Norwich'"
+            self.current_state = self.STATES['GET_CURRENT_STATION']
+            return "At which station is the train currently?"
+        
+        elif self.current_state == self.STATES['GET_CURRENT_STATION']:
+            station = self.match_station(user_input)
+            if station:
+                self.conversation_state['current_station'] = station
+                self.current_state = self.STATES['GET_DELAY_DURATION']
+                return "How many minutes has the train been delayed?"
+            return "Station not recognized. Please try again."
+        
+        elif self.current_state == self.STATES['GET_DELAY_DURATION']:
+            match = re.search(r'(\d+)', user_input)
+            if match:
+                delay = int(match.group(1))
+                prediction = self.predict_arrival(
+                    self.conversation_state['route'],
+                    self.conversation_state['current_station'],
+                    delay
+                )
+                if prediction:
+                    return f"With {delay} minute delay, your train should arrive in London in about {prediction} minutes."
+                return "Couldn't calculate arrival time. Please check your information."
+            return "Please specify the delay in minutes (e.g., '15 minutes')."
+        
+        return "I'm not sure what you mean. Could you rephrase?"
 
-            elif self.current_state == self.STATES['GET_DESTINATION']:
-                self.conversation_state['destination'] = user_input
-                self.current_state = self.STATES['GET_DATE']
-                return "Got it. What date would you like to travel? (e.g., April 25th)"
-
-            elif self.current_state == self.STATES['GET_DATE']:
-                self.conversation_state['travel_date'] = user_input
-                self.current_state = self.STATES['GET_TIME']
-                return "And what time are you planning to depart? (e.g., 10:00 AM)"
-
-            elif self.current_state == self.STATES['GET_TIME']:
-                self.conversation_state['travel_time'] = user_input
-                self.current_state = self.STATES['CONFIRM_DETAILS']
-                summary = f"""
-    Just to confirm:
-    - From: {self.conversation_state['departure']}
-    - To: {self.conversation_state['destination']}
-    - Date: {self.conversation_state['travel_date']}
-    - Time: {self.conversation_state['travel_time']}
-
-    Is this correct? (yes/no)
-    """
-                return summary.strip()
-
-            elif self.current_state == self.STATES['CONFIRM_DETAILS']:
-                if 'yes' in user_input.lower():
-                    self.current_state = self.STATES['PRESENT_RESULTS']
-                    return "Awesome! Searching for the cheapest train tickets now... 🚄 (mock results coming soon!)"
-                else:
-                    self.current_state = self.STATES['GET_DEPARTURE']
-                    return "Okay, let's start over. Where are you leaving from?"
-
-            elif self.current_state == self.STATES['PRESENT_RESULTS']:
-                if 'no' in user_input.lower() or 'start over' in user_input.lower():
-                    self.current_state = self.STATES['GET_DEPARTURE']
-                    return "Okay, let's start over. Where are you leaving from?"
-                elif 'yes' in user_input.lower() or 'book' in user_input.lower():
-                    self.current_state = self.STATES['BOOKING']
-                    return "Great! Booking functionality would go here in a real implementation."
-                else:
-                    return "I didn't understand that. Would you like to book one of these options or start over?"
-
-            elif self.current_state == self.STATES['BOOKING']:
-                self.current_state = self.STATES['FAREWELL']
-                return "Your booking is complete! " + random.choice(self.farewells)
-
-            elif self.current_state == self.STATES['FAREWELL']:
-                return random.choice(self.farewells)
-
-            return "I'm not quite sure what you mean. Could you try rephrasing?"
-
-        except Exception as e:
-            print(f"Error generating response: {str(e)}")
-            return "I encountered an error. Please try again."
-
+    def detect_intent(self, text: str) -> str:
+        """Detect user intent from input text"""
+        text = text.lower()
+        if any(word in text for word in ['hello', 'hi']):
+            return "greeting"
+        if any(word in text for word in ['bye', 'goodbye']):
+            return "farewell"
+        if any(word in text for word in ['delay', 'late', 'arrival']):
+            return "delay_inquiry"
+        return "unknown"
 
 
 if __name__ == "__main__":
-    print("Initializing robust chatbot...")
+    print("Initializing Train Ticket Chatbot...")
     chatbot = RobustTrainTicketChatbot()
 
-    print("Chatbot:", chatbot.generate_response("Hello"))
-
     print("\n🚆 Welcome to TrainBot! Type 'exit' to quit.")
+    print("You can ask about:")
+    print("- Tickets (e.g., 'I want to go from Norwich to London')")
+    print("- Delays (e.g., 'My train is delayed')")
+    
     while True:
-        user_input = input("You: ")
+        user_input = input("\nYou: ")
         if user_input.lower() == 'exit':
             print("TrainBot: Goodbye!")
             break
         response = chatbot.generate_response(user_input)
         print("TrainBot:", response)
-
-    # test_phrases = [
-    #     "I want to travel from London to Cambridge",
-    #     "on March 15th",
-    #     "in the morning",
-    #     "yes that's correct"
-    # ]
-
-    # for phrase in test_phrases:
-    #     print("\nUser:", phrase)
-    #     print("Chatbot:", chatbot.generate_response(phrase))
