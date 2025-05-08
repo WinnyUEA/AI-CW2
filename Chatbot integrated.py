@@ -1,6 +1,7 @@
 import re
 import sqlite3
 import random
+import pandas as pd
 from typing import Dict, List, Optional
 import spacy
 from spacy.matcher import Matcher
@@ -41,7 +42,9 @@ class TrainTicketChatbotWithBooking:
             'GET_RETURN_TIME': 9,
             'CONFIRM_BOOKING': 10,
             'FAREWELL': 11,
-            'DELAY_INQUIRY': 12
+            'DELAY_INQUIRY': 12,
+            'GET_CURRENT_STATION': 13,
+            'GET_DELAY_DURATION': 14
         }
         
         self.current_state = self.STATES['GREETING']
@@ -54,24 +57,13 @@ class TrainTicketChatbotWithBooking:
             'children': '0',
             'is_return': False,
             'return_date': None,
-            'return_time': None
+            'return_time': None,
+            'route': None,
+            'current_station': None
         }
         
-        # Initialize stations
-        self.stations = [
-            "Norwich", "Diss", "Stowmarket", "Ipswich",
-            "Manningtree", "Colchester", "Chelmsford",
-            "Stratford", "London Liverpool Street"
-        ]
-        
-        # Station codes mapping (example)
-        self.station_codes = {
-            "norwich": "NRW",
-            "london liverpool street": "LST",
-            "paddington": "PAD",
-            "manchester piccadilly": "MAN",
-            "birmingham new street": "BHM"
-        }
+        # Load station data from CSV
+        self.load_station_data('stations.csv')  # Update with your CSV path
         
         # Initialize train schedules for delay prediction
         self.initialize_train_schedules()
@@ -84,6 +76,36 @@ class TrainTicketChatbotWithBooking:
         # Initialize database
         self.db_conn = sqlite3.connect(':memory:')  # Using in-memory database for simplicity
         self.create_tables()
+
+    def load_station_data(self, csv_path: str):
+        """Load station data from CSV file"""
+        try:
+            df = pd.read_csv(csv_path)
+            self.stations = []
+            self.station_codes = {}
+            
+            for _, row in df.iterrows():
+                station_name = str(row['name']).strip()
+                alias = str(row['longname.name_alias']).strip()
+                tiploc = str(row['alpha3']).strip()
+                
+                # Add main station name
+                if station_name and station_name != '\\N':
+                    self.stations.append(station_name)
+                    self.station_codes[station_name.lower()] = tiploc
+                
+                # Add alias if exists
+                if alias and alias != '\\N':
+                    self.station_codes[alias.lower()] = tiploc
+            
+            # Example mainline route (adjust as needed)
+            self.route_tiplocs = list(self.station_codes.values())[:9]  
+            print(f"Loaded {len(self.stations)} stations from CSV")
+        except Exception as e:
+            print(f"Error loading station data: {e}")
+            self.stations = []
+            self.station_codes = {}
+            self.route_tiplocs = []
 
     def create_tables(self):
         """Create database tables for conversation logging"""
@@ -133,11 +155,7 @@ class TrainTicketChatbotWithBooking:
 
     def get_station_code(self, station_name: str) -> Optional[str]:
         """Get station code from station name"""
-        station_name = station_name.lower()
-        for name, code in self.station_codes.items():
-            if station_name in name:
-                return code
-        return None
+        return self.station_codes.get(station_name.lower())
 
     def predict_arrival(self, route: str, current_station: str, delay: int) -> Optional[int]:
         """Predict arrival time at destination with delay"""
@@ -156,9 +174,8 @@ class TrainTicketChatbotWithBooking:
         cursor.execute('''
             INSERT INTO conversations (user_input, bot_response)
             VALUES (?, ?)
-        ''', (user_input, response))  # Corrected the placement of the parameters
+        ''', (user_input, response))
         self.db_conn.commit()
-
 
     def round_down_to_quarter(self, minute):
         return str((int(minute) // 15) * 15).zfill(2)
@@ -217,9 +234,9 @@ class TrainTicketChatbotWithBooking:
             wait = WebDriverWait(driver, 10)
             reject_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Reject All')]")))
             reject_btn.click()
-            print("🍪 Cookie popup rejected.")
+            print(" Cookie popup rejected.")
         except:
-            print("✅ No cookie popup appeared or already handled.")
+            print(" No cookie popup appeared or already handled.")
 
     def extract_cheapest_ticket(self, driver, target_hour, target_minute):
         time.sleep(10)
@@ -397,12 +414,14 @@ class TrainTicketChatbotWithBooking:
         elif self.current_state == self.STATES['DELAY_INQUIRY']:
             if "norwich" in user_input.lower() and "london" in user_input.lower():
                 self.booking_details['route'] = "Norwich-LST"
+                self.current_state = self.STATES['GET_CURRENT_STATION']
+                return "At which station is the train currently?"
             elif "london" in user_input.lower() and "norwich" in user_input.lower():
                 self.booking_details['route'] = "LST-Norwich"
+                self.current_state = self.STATES['GET_CURRENT_STATION']
+                return "At which station is the train currently?"
             else:
                 return "Please specify 'Norwich to London' or 'London to Norwich'"
-            self.current_state = self.STATES['GET_CURRENT_STATION']
-            return "At which station is the train currently?"
         
         elif self.current_state == self.STATES['GET_CURRENT_STATION']:
             station = self.match_station(user_input)
@@ -422,6 +441,7 @@ class TrainTicketChatbotWithBooking:
                     delay
                 )
                 if prediction:
+                    self.current_state = self.STATES['FAREWELL']
                     return f"With {delay} minute delay, your train should arrive in London in about {prediction} minutes."
                 return "Couldn't calculate arrival time. Please check your information."
             return "Please specify the delay in minutes (e.g., '15 minutes')."
@@ -431,7 +451,7 @@ class TrainTicketChatbotWithBooking:
     def process_booking(self, confirm=False):
         """Process the booking and return results"""
         # Build summary message
-        summary = "🚂 Here's your journey summary:\n"
+        summary = " Here's your journey summary:\n"
         summary += f"From: {self.booking_details['origin']}\n"
         summary += f"To: {self.booking_details['destination']}\n"
         summary += f"Date: {self.booking_details['date']}\n"
@@ -448,7 +468,7 @@ class TrainTicketChatbotWithBooking:
             return summary
         
         # If confirmed, proceed with web scraping
-        summary += "\n🔍 Searching for the best tickets...\n"
+        summary += "\n Searching for the best tickets...\n"
         
         try:
             # Build URL and launch browser
@@ -466,11 +486,11 @@ class TrainTicketChatbotWithBooking:
                 
                 if outward_time and return_time:
                     total_price = outward_price + return_price
-                    summary += f"\n🎟 Tickets found!\n"
+                    summary += f"\n Tickets found!\n"
                     summary += f"Outward: {outward_time} (£{outward_price:.2f})\n"
                     summary += f"Return: {return_time} (£{return_price:.2f})\n"
                     summary += f"Total Price: £{total_price:.2f}\n"
-                    summary += f"\n🔗 You can book here: {url}"
+                    summary += f"\n You can book here: {url}"
                 else:
                     summary += "Sorry, I couldn't find suitable tickets for your journey."
             else:
@@ -479,10 +499,10 @@ class TrainTicketChatbotWithBooking:
                 driver.quit()
                 
                 if best_match:
-                    summary += f"\n🎟 Cheapest ticket found:\n"
+                    summary += f"\n Cheapest ticket found:\n"
                     summary += f"Time: {best_match['dep_time']}\n"
                     summary += f"Price: £{best_match['price']:.2f}\n"
-                    summary += f"\n🔗 You can book here: {url}"
+                    summary += f"\n You can book here: {url}"
                 else:
                     summary += "Sorry, I couldn't find suitable tickets for your journey."
             
@@ -578,7 +598,7 @@ if __name__ == "__main__":
     print("Initializing Train Ticket Chatbot with Booking...")
     chatbot = TrainTicketChatbotWithBooking()
 
-    print("\n🚆 Welcome to TrainBot! Type 'exit' to quit at any time.")
+    print("\n Welcome to TrainBot! Type 'exit' to quit at any time.")
     print("You can:")
     print("- Book tickets (just tell me where you're going)")
     print("- Check for delays (say 'my train is delayed')")
@@ -591,6 +611,6 @@ if __name__ == "__main__":
         
         response = chatbot.generate_response(user_input)
         print("TrainBot:", response)
-        
+
         if chatbot.current_state == chatbot.STATES['FAREWELL']:
             break
