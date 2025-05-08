@@ -1,0 +1,657 @@
+import re
+import sqlite3
+import random
+import pandas as pd
+from typing import Dict, List, Optional
+import spacy
+from spacy.matcher import Matcher
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from urllib.parse import urlencode
+from datetime import datetime, timedelta
+import time
+import gradio as gr
+
+# Initialize spaCy for NLP
+try:
+    nlp = spacy.load('en_core_web_sm')
+    print("NLP model loaded successfully.")
+except:
+    print("spaCy not available. Some features will be limited.")
+    nlp = None
+
+class TrainTicketChatbotWithBooking:
+    def __init__(self):
+        """Initialize the chatbot with all required components"""
+        # Conversation messages
+        self.greetings = ["Hello! How can I help with your train journey today?"]
+        self.farewells = ["Thank you for using our service. Safe travels!"]
+
+        # Conversation states for ticket booking
+        self.STATES = {
+            'GREETING': 0,
+            'GET_ORIGIN': 1,
+            'GET_DESTINATION': 2,
+            'GET_DATE': 3,
+            'GET_TIME': 4,
+            'GET_ADULTS': 5,
+            'GET_CHILDREN': 6,
+            'CHECK_RETURN': 7,
+            'GET_RETURN_DATE': 8,
+            'GET_RETURN_TIME': 9,
+            'CONFIRM_BOOKING': 10,
+            'FAREWELL': 11,
+            'DELAY_INQUIRY': 12,
+            'GET_CURRENT_STATION': 13,
+            'GET_DELAY_DURATION': 14
+        }
+        
+        self.current_state = self.STATES['GREETING']
+        self.booking_details = {
+            'origin': None,
+            'destination': None,
+            'date': None,
+            'time': None,
+            'adults': '1',
+            'children': '0',
+            'is_return': False,
+            'return_date': None,
+            'return_time': None,
+            'route': None,
+            'current_station': None
+        }
+        
+        # Load station data from CSV
+        self.load_station_data('stations.csv')  # Update with your CSV path
+        
+        # Initialize train schedules for delay prediction
+        self.initialize_train_schedules()
+        
+        # Set up NLP
+        if nlp:
+            self.matcher = Matcher(nlp.vocab)
+            self.initialize_nlp_matchers()
+        
+        # Initialize database
+        self.db_conn = sqlite3.connect(':memory:')  # Using in-memory database for simplicity
+        self.create_tables()
+
+    def load_station_data(self, csv_path: str):
+        """Load station data from CSV file"""
+        try:
+            df = pd.read_csv(csv_path)
+            self.stations = []
+            self.station_codes = {}
+            
+            for _, row in df.iterrows():
+                station_name = str(row['name']).strip()
+                alias = str(row['longname.name_alias']).strip()
+                tiploc = str(row['alpha3']).strip()
+                
+                # Add main station name
+                if station_name and station_name != '\\N':
+                    self.stations.append(station_name)
+                    self.station_codes[station_name.lower()] = tiploc
+                
+                # Add alias if exists
+                if alias and alias != '\\N':
+                    self.station_codes[alias.lower()] = tiploc
+            
+            # Example mainline route (adjust as needed)
+            self.route_tiplocs = list(self.station_codes.values())[:9]  
+            print(f"Loaded {len(self.stations)} stations from CSV")
+        except Exception as e:
+            print(f"Error loading station data: {e}")
+            self.stations = []
+            self.station_codes = {}
+            self.route_tiplocs = []
+
+    def create_tables(self):
+        """Create database tables for conversation logging"""
+        cursor = self.db_conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_input TEXT,
+                bot_response TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        self.db_conn.commit()
+
+    def initialize_train_schedules(self):
+        """Initialize train schedule data"""
+        self.train_schedules = {
+            "Norwich-LST": {
+                "stations": self.stations,
+                "times": [0, 25, 40, 50, 65, 80, 100, 115, 120]  # Minutes from origin
+            },
+            "LST-Norwich": {
+                "stations": list(reversed(self.stations)),
+                "times": [0, 5, 25, 45, 60, 70, 85, 100, 120]
+            }
+        }
+
+    def initialize_nlp_matchers(self):
+        """Set up NLP patterns for travel phrases"""
+        if nlp:
+            # Pattern for "from <station>"
+            self.matcher.add("DEPARTURE", [
+                [{"LOWER": {"IN": ["from", "departing"]}}, {"ENT_TYPE": "GPE"}]
+            ])
+            # Pattern for "to <station>"
+            self.matcher.add("DESTINATION", [
+                [{"LOWER": {"IN": ["to", "going"]}}, {"ENT_TYPE": "GPE"}]
+            ])
+
+    def match_station(self, text: str) -> Optional[str]:
+        """Match user input to known station names"""
+        text = text.lower()
+        for station in self.stations:
+            if text in station.lower():
+                return station
+        return None
+
+    def get_station_code(self, station_name: str) -> Optional[str]:
+        """Get station code from station name"""
+        return self.station_codes.get(station_name.lower())
+
+    def predict_arrival(self, route: str, current_station: str, delay: int) -> Optional[int]:
+        """Predict arrival time at destination with delay"""
+        try:
+            schedule = self.train_schedules[route]
+            current_idx = schedule["stations"].index(current_station)
+            dest_idx = schedule["stations"].index("London Liverpool Street")
+            remaining_time = schedule["times"][dest_idx] - schedule["times"][current_idx]
+            return remaining_time + delay
+        except:
+            return None
+
+    def log_conversation(self, user_input: str, response: str):
+        """Log conversation to database"""
+        cursor = self.db_conn.cursor()
+        cursor.execute('''
+            INSERT INTO conversations (user_input, bot_response)
+            VALUES (?, ?)
+        ''', (user_input, response))
+        self.db_conn.commit()
+
+    def round_down_to_quarter(self, minute):
+        return str((int(minute) // 15) * 15).zfill(2)
+
+    def build_url(self):
+        """Build the booking URL from collected details"""
+        origin = self.booking_details['origin']
+        destination = self.booking_details['destination']
+        date_str = self.booking_details['date']
+        time_str = self.booking_details['time']
+        adults = self.booking_details['adults']
+        children = self.booking_details['children']
+        return_date_str = self.booking_details['return_date']
+        return_time_str = self.booking_details['return_time']
+
+        day, month, year = date_str.split("/")
+        hour, minute = time_str.split(":")
+        minute = self.round_down_to_quarter(minute)
+        leaving_date = f"{day}{month}{year[2:]}"
+        leaving_hour = hour.zfill(2)
+
+        params = {
+            "origin": origin,
+            "destination": destination,
+            "leavingType": "departing",
+            "leavingDate": leaving_date,
+            "leavingHour": leaving_hour,
+            "leavingMin": minute,
+            "adults": adults,
+            "children": children,
+            "extraTime": "0"
+        }
+
+        if return_date_str and return_time_str:
+            r_day, r_month, r_year = return_date_str.split("/")
+            r_hour, r_minute = return_time_str.split(":")
+            r_minute = self.round_down_to_quarter(r_minute)
+            return_date = f"{r_day}{r_month}{r_year[2:]}"
+            return_hour = r_hour.zfill(2)
+
+            params.update({
+                "type": "return",
+                "returnType": "departing",
+                "returnDate": return_date,
+                "returnHour": return_hour,
+                "returnMin": r_minute
+            })
+        else:
+            params["type"] = "single"
+
+        url = "https://www.nationalrail.co.uk/journey-planner/?" + urlencode(params)
+        return url, int(hour), int(minute)
+
+    def accept_cookies_if_present(self, driver):
+        try:
+            wait = WebDriverWait(driver, 10)
+            reject_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Reject All')]")))
+            reject_btn.click()
+            print(" Cookie popup rejected.")
+        except:
+            print(" No cookie popup appeared or already handled.")
+
+    def extract_cheapest_ticket(self, driver, target_hour, target_minute):
+        time.sleep(10)
+        cards = driver.find_elements(By.CSS_SELECTOR, "section[data-testid^='result-card-section-outward']")
+        cheapest_price = float("inf")
+        best_match = None
+
+        for card in cards:
+            try:
+                dep_time_elem = card.find_element(By.CSS_SELECTOR, "time[datetime]")
+                dep_time_str = dep_time_elem.text.strip()
+                dep_time = datetime.strptime(dep_time_str, "%H:%M")
+                dep_minutes = dep_time.hour * 60 + dep_time.minute
+                target_minutes = target_hour * 60 + target_minute
+                diff = abs(dep_minutes - target_minutes)
+
+                if diff > 30:
+                    continue
+
+                price_elem = card.find_element(By.XPATH, ".//span[contains(text(), '£')]")
+                price_text = price_elem.text.strip().replace("£", "")
+                price = float(price_text)
+
+                if price < cheapest_price:
+                    cheapest_price = price
+                    best_match = {
+                        "dep_time": dep_time_str,
+                        "price": price
+                    }
+            except Exception:
+                continue
+
+        return best_match
+
+    def detect_intent(self, text: str) -> str:
+        """Detect user intent from input text"""
+        text = text.lower()
+        if any(word in text for word in ['hello', 'hi']):
+            return "greeting"
+        if any(word in text for word in ['bye', 'goodbye', 'exit']):
+            return "farewell"
+        if any(word in text for word in ['delay', 'late', 'arrival']):
+            return "delay_inquiry"
+        if any(word in text for word in ['book', 'ticket', 'journey']):
+            return "booking"
+        return "unknown"
+
+    def validate_date(self, date_str: str) -> bool:
+        """Validate date format DD/MM/YYYY"""
+        try:
+            day, month, year = date_str.split('/')
+            if len(day) == 2 and len(month) == 2 and len(year) == 4:
+                datetime.strptime(date_str, '%d/%m/%Y')
+                return True
+        except ValueError:
+            return False
+        return False
+
+    def validate_time(self, time_str: str) -> bool:
+        """Validate time format HH:MM"""
+        try:
+            datetime.strptime(time_str, '%H:%M')
+            return True
+        except ValueError:
+            return False
+
+    def generate_response(self, user_input: str) -> str:
+        """Generate appropriate response based on current state"""
+        # Log the conversation
+        self.log_conversation(user_input, "")
+        
+        # Detect intent
+        intent = self.detect_intent(user_input)
+        
+        if intent == "farewell":
+            self.current_state = self.STATES['FAREWELL']
+            return random.choice(self.farewells)
+        elif intent == "delay_inquiry":
+            self.current_state = self.STATES['DELAY_INQUIRY']
+            return "I can help with delay predictions. Which train are you on? (Norwich to London or London to Norwich)"
+        
+        # State machine logic for ticket booking
+        if self.current_state == self.STATES['GREETING']:
+            self.current_state = self.STATES['GET_ORIGIN']
+            return random.choice(self.greetings) + " Where are you traveling from? (Please provide the station name)"
+        
+        elif self.current_state == self.STATES['GET_ORIGIN']:
+            station = self.match_station(user_input)
+            if station:
+                code = self.get_station_code(station)
+                if code:
+                    self.booking_details['origin'] = code
+                    self.current_state = self.STATES['GET_DESTINATION']
+                    return f"Departing from {station} ({code}). Where would you like to go?"
+                else:
+                    return f"I found {station} but don't have its station code. Please try another major station."
+            return "Station not recognized. Please try again with a different station name."
+        
+        elif self.current_state == self.STATES['GET_DESTINATION']:
+            station = self.match_station(user_input)
+            if station:
+                code = self.get_station_code(station)
+                if code:
+                    self.booking_details['destination'] = code
+                    self.current_state = self.STATES['GET_DATE']
+                    return f"Going to {station} ({code}). When are you traveling? (Please provide date as DD/MM/YYYY)"
+                else:
+                    return f"I found {station} but don't have its station code. Please try another major station."
+            return "Station not recognized. Please try again with a different station name."
+        
+        elif self.current_state == self.STATES['GET_DATE']:
+            if self.validate_date(user_input):
+                self.booking_details['date'] = user_input
+                self.current_state = self.STATES['GET_TIME']
+                return "What time would you like to depart? (Please provide time as HH:MM, 24-hour format)"
+            return "Invalid date format. Please provide date as DD/MM/YYYY"
+        
+        elif self.current_state == self.STATES['GET_TIME']:
+            if self.validate_time(user_input):
+                self.booking_details['time'] = user_input
+                self.current_state = self.STATES['GET_ADULTS']
+                return "How many adults will be traveling? (Default is 1)"
+            return "Invalid time format. Please provide time as HH:MM (24-hour format)"
+        
+        elif self.current_state == self.STATES['GET_ADULTS']:
+            if user_input.isdigit() or user_input == "":
+                self.booking_details['adults'] = user_input if user_input else "1"
+                self.current_state = self.STATES['GET_CHILDREN']
+                return "How many children will be traveling? (Default is 0)"
+            return "Please enter a number for adults or leave blank for default (1)"
+        
+        elif self.current_state == self.STATES['GET_CHILDREN']:
+            if user_input.isdigit() or user_input == "":
+                self.booking_details['children'] = user_input if user_input else "0"
+                self.current_state = self.STATES['CHECK_RETURN']
+                return "Is this a return journey? (yes/no)"
+            return "Please enter a number for children or leave blank for default (0)"
+        
+        elif self.current_state == self.STATES['CHECK_RETURN']:
+            if user_input.lower() in ['yes', 'y']:
+                self.booking_details['is_return'] = True
+                self.current_state = self.STATES['GET_RETURN_DATE']
+                return "Please provide the return date (DD/MM/YYYY)"
+            elif user_input.lower() in ['no', 'n']:
+                self.booking_details['is_return'] = False
+                self.current_state = self.STATES['CONFIRM_BOOKING']
+                return self.process_booking()
+            else:
+                return "Please answer with 'yes' or 'no'"
+        
+        elif self.current_state == self.STATES['GET_RETURN_DATE']:
+            if self.validate_date(user_input):
+                self.booking_details['return_date'] = user_input
+                self.current_state = self.STATES['GET_RETURN_TIME']
+                return "What time would you like to return? (HH:MM, 24-hour format)"
+            return "Invalid date format. Please provide date as DD/MM/YYYY"
+        
+        elif self.current_state == self.STATES['GET_RETURN_TIME']:
+            if self.validate_time(user_input):
+                self.booking_details['return_time'] = user_input
+                self.current_state = self.STATES['CONFIRM_BOOKING']
+                return self.process_booking()
+            return "Invalid time format. Please provide time as HH:MM (24-hour format)"
+        
+        elif self.current_state == self.STATES['CONFIRM_BOOKING']:
+            if user_input.lower() in ['yes', 'y']:
+                return self.process_booking(confirm=True)
+            elif user_input.lower() in ['no', 'n']:
+                self.current_state = self.STATES['GREETING']
+                return "Okay, let's start over. Where are you traveling from?"
+            else:
+                return "Please answer with 'yes' or 'no'"
+        
+        # Handle delay inquiry state
+        elif self.current_state == self.STATES['DELAY_INQUIRY']:
+            if "norwich" in user_input.lower() and "london" in user_input.lower():
+                self.booking_details['route'] = "Norwich-LST"
+                self.current_state = self.STATES['GET_CURRENT_STATION']
+                return "At which station is the train currently?"
+            elif "london" in user_input.lower() and "norwich" in user_input.lower():
+                self.booking_details['route'] = "LST-Norwich"
+                self.current_state = self.STATES['GET_CURRENT_STATION']
+                return "At which station is the train currently?"
+            else:
+                return "Please specify 'Norwich to London' or 'London to Norwich'"
+        
+        elif self.current_state == self.STATES['GET_CURRENT_STATION']:
+            station = self.match_station(user_input)
+            if station:
+                self.booking_details['current_station'] = station
+                self.current_state = self.STATES['GET_DELAY_DURATION']
+                return "How many minutes has the train been delayed?"
+            return "Station not recognized. Please try again."
+        
+        elif self.current_state == self.STATES['GET_DELAY_DURATION']:
+            match = re.search(r'(\d+)', user_input)
+            if match:
+                delay = int(match.group(1))
+                prediction = self.predict_arrival(
+                    self.booking_details['route'],
+                    self.booking_details['current_station'],
+                    delay
+                )
+                if prediction:
+                    self.current_state = self.STATES['FAREWELL']
+                    return f"With {delay} minute delay, your train should arrive in London in about {prediction} minutes."
+                return "Couldn't calculate arrival time. Please check your information."
+            return "Please specify the delay in minutes (e.g., '15 minutes')."
+        
+        return "I'm not sure what you mean. Could you rephrase?"
+
+    def process_booking(self, confirm=False):
+        """Process the booking and return results"""
+        # Build summary message
+        summary = " Here's your journey summary:\n"
+        summary += f"From: {self.booking_details['origin']}\n"
+        summary += f"To: {self.booking_details['destination']}\n"
+        summary += f"Date: {self.booking_details['date']}\n"
+        summary += f"Time: {self.booking_details['time']}\n"
+        summary += f"Adults: {self.booking_details['adults']}\n"
+        summary += f"Children: {self.booking_details['children']}\n"
+        
+        if self.booking_details['is_return']:
+            summary += f"Return Date: {self.booking_details['return_date']}\n"
+            summary += f"Return Time: {self.booking_details['return_time']}\n"
+        
+        if not confirm:
+            summary += "\nWould you like me to find the best tickets for this journey? (yes/no)"
+            return summary
+        
+        # If confirmed, proceed with web scraping
+        summary += "\n Searching for the best tickets...\n"
+        
+        try:
+            # Build URL and launch browser
+            url, target_hour, target_minute = self.build_url()
+            
+            driver = webdriver.Chrome()
+            driver.get(url)
+            
+            self.accept_cookies_if_present(driver)
+            
+            if self.booking_details['is_return']:
+                # Handle return journey
+                outward_time, outward_price = self.select_cheapest_outward_journey(driver, target_hour, target_minute)
+                return_time, return_price = self.select_return_journey(driver, self.booking_details['return_time'])
+                
+                if outward_time and return_time:
+                    total_price = outward_price + return_price
+                    summary += f"\n Tickets found!\n"
+                    summary += f"Outward: {outward_time} (£{outward_price:.2f})\n"
+                    summary += f"Return: {return_time} (£{return_price:.2f})\n"
+                    summary += f"Total Price: £{total_price:.2f}\n"
+                    summary += f"\n You can book here: {url}"
+                else:
+                    summary += "Sorry, I couldn't find suitable tickets for your journey."
+            else:
+                # Handle one-way journey
+                best_match = self.extract_cheapest_ticket(driver, target_hour, target_minute)
+                driver.quit()
+                
+                if best_match:
+                    summary += f"\n Cheapest ticket found:\n"
+                    summary += f"Time: {best_match['dep_time']}\n"
+                    summary += f"Price: £{best_match['price']:.2f}\n"
+                    summary += f"\n You can book here: {url}"
+                else:
+                    summary += "Sorry, I couldn't find suitable tickets for your journey."
+            
+            self.current_state = self.STATES['FAREWELL']
+            return summary
+            
+        except Exception as e:
+            return f"An error occurred while searching for tickets: {str(e)}"
+
+    def select_cheapest_outward_journey(self, driver, target_hour, target_minute):
+        """Select cheapest outward journey within time window"""
+        time.sleep(10)
+        cards = driver.find_elements(By.CSS_SELECTOR, "section[data-testid^='result-card-section-outward']")
+        best_card = None
+        lowest_price = float('inf')
+        best_time = None
+
+        for card in cards:
+            try:
+                dep_time_elem = card.find_element(By.CSS_SELECTOR, "time[datetime]")
+                dep_time_str = dep_time_elem.text.strip()
+                dep_time = datetime.strptime(dep_time_str, "%H:%M")
+                dep_minutes = dep_time.hour * 60 + dep_time.minute
+                target_minutes = target_hour * 60 + target_minute
+                diff = abs(dep_minutes - target_minutes)
+
+                if diff > 60:  # 60-minute window
+                    continue
+
+                price_elem = card.find_element(By.XPATH, ".//span[contains(text(), '£')]")
+                price_text = price_elem.text.strip().replace("£", "")
+                price = float(price_text)
+
+                if price < lowest_price:
+                    lowest_price = price
+                    best_card = card
+                    best_time = dep_time_str
+
+            except Exception:
+                continue
+
+        if best_card:
+            try:
+                button = best_card.find_element(By.XPATH, ".//input[@type='button']")
+                driver.execute_script("arguments[0].click();", button)
+                return best_time, lowest_price
+            except Exception:
+                return None, None
+        return None, None
+
+    def select_return_journey(self, driver, return_time_str):
+        """Select return journey within time window"""
+        user_return_time = datetime.strptime(return_time_str, "%H:%M")
+        time_window = timedelta(minutes=60)
+        time.sleep(10)
+        journey_sections = driver.find_elements(By.CSS_SELECTOR, 'section[id^="inward-"]')
+
+        best_option = None
+        best_price = float('inf')
+        closest_time_diff = timedelta.max
+        best_time = None
+
+        for section in journey_sections:
+            try:
+                time_elem = section.find_element(By.CSS_SELECTOR, 'time[class*="bAcVR"]')
+                return_time = datetime.strptime(time_elem.text.strip(), "%H:%M")
+                time_diff = abs(return_time - user_return_time)
+
+                if time_diff <= time_window:
+                    price_elem = section.find_element(By.XPATH, ".//div[contains(@id,'price')]/div/span[2]")
+                    price = float(price_elem.text.replace("£", "").strip())
+
+                    if price < best_price or (price == best_price and time_diff < closest_time_diff):
+                        best_price = price
+                        best_time = time_elem.text.strip()
+                        closest_time_diff = time_diff
+                        best_option = section
+
+            except Exception:
+                continue
+
+        if best_option:
+            try:
+                select_btn = best_option.find_element(By.XPATH, './/input[@type="button"]')
+                driver.execute_script("arguments[0].click();", select_btn)
+                return best_time, best_price
+            except Exception:
+                return None, None
+        return None, None
+
+# Initialize the chatbot
+chatbot = TrainTicketChatbotWithBooking()
+
+# Gradio interface
+def chat(message, history):
+    history = history or []
+    response = chatbot.generate_response(message)
+    history.append((message, response))
+    
+    # Check if conversation should end
+    if chatbot.current_state == chatbot.STATES['FAREWELL']:
+        chatbot.current_state = chatbot.STATES['GREETING']  # Reset for next conversation
+        history.append(("", "Type a new message to start another conversation."))
+    
+    return history, history
+
+# Custom CSS for the Gradio interface
+css = """
+.gradio-container {
+    max-width: 800px;
+    margin: auto;
+}
+.chatbot {
+    min-height: 500px;
+}
+"""
+
+with gr.Blocks(css=css) as demo:
+    gr.Markdown("""
+    # 🚂 Train Ticket Booking Assistant
+    Chat with our assistant to book train tickets or check for delays.
+    """)
+    
+    with gr.Row():
+        chatbot_interface = gr.Chatbot(label="Conversation", elem_classes="chatbot")
+        
+    with gr.Row():
+        message = gr.Textbox(label="Type your message here...", placeholder="Where are you traveling from?")
+        
+    with gr.Row():
+        submit_btn = gr.Button("Send")
+        clear_btn = gr.Button("Clear")
+    
+    # Store conversation history
+    state = gr.State()
+    
+    # Event handlers
+    submit_btn.click(
+        chat,
+        inputs=[message, state],
+        outputs=[chatbot_interface, state]
+    )
+    message.submit(
+        chat,
+        inputs=[message, state],
+        outputs=[chatbot_interface, state]
+    )
+    clear_btn.click(lambda: (None, None), None, [chatbot_interface, state], queue=False)
+
+if __name__ == "__main__":
+    demo.launch()
