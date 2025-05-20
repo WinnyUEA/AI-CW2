@@ -1,0 +1,467 @@
+[
+  {
+    "code": "GE01",
+    "location": "Liverpool Street - Stratford",
+    "blockage": "partial",
+    "advice": "Activate GE01. Prioritise TOC services on unaffected lines. Avoid sub lines for GE services. Cross at Wheler Street and Bethnal Green West Jn as needed.",
+    "staff_notes": "Deploy MOMs or maintenance staff at ends of affected sections. Driver managers and RPIs at Liverpool Street, Stratford, Shenfield.",
+    "alt_transport": [
+      "London Underground via any reasonable route",
+      "London Buses",
+      "TfL Rail between Liverpool Street and Shenfield",
+      "c2c services via Fenchurch Street",
+      "London Overground (Romford-Upminster)",
+      "Great Northern services from King's Cross to Cambridge/Ely"
+    ],
+    "passenger_notes": "Advance ticket holders may travel ±60 minutes. Passengers to Southend to change at Wickford."
+  },
+  {
+    "code": "GE02",
+    "location": "Stratford - Maryland",
+    "blockage": "partial",
+    "advice": "Activate GE02. Divert trains via Hackney Downs if possible. Suspend affected segment.",
+    "staff_notes": "Notify controllers and on-call ops. Update TIM monitors at affected depots.",
+    "alt_transport": [
+      "London Overground services",
+      "Underground Central Line",
+      "Local buses"
+    ],
+    "passenger_notes": "Delays expected. Advise to check TfL and National Rail for updates."
+  },
+  {
+    "code": "GE03",
+    "location": "Maryland - Ilford",
+    "blockage": "partial",
+    "advice": "Activate GE03. Use Bi-Directional working. Reduced peak-hour frequency.",
+    "staff_notes": "Staff at Ilford and Stratford to assist passenger flow.",
+    "alt_transport": [
+      "TfL Rail services between Liverpool Street and Shenfield"
+    ],
+    "passenger_notes": "Announce delays and altered stops. Use local buses where possible."
+  },
+  {
+    "code": "GE04",
+    "location": "Ilford - Gidea Park",
+    "blockage": "partial",
+    "advice": "Activate GE04. Some trains to terminate early. Provide alternative transport where needed.",
+    "staff_notes": "Inform depot managers at Stratford and Shenfield. TIM notices required.",
+    "alt_transport": [
+      "TfL Rail",
+      "c2c via Upminster"
+    ],
+    "passenger_notes": "Delays expected. Recommend passengers to consider alternative connections."
+  },
+  {
+    "code": "GE05",
+    "location": "Romford - Shenfield",
+    "blockage": "partial",
+    "advice": "Activate GE05. Apply single-line working. Anticipate congestion.",
+    "staff_notes": "Deploy staff at Shenfield and Brentwood to manage crowds and rerouting.",
+    "alt_transport": [
+      "London Underground",
+      "London Buses",
+      "Greater Anglia alternate services"
+    ],
+    "passenger_notes": "Passengers should expect delays and check local bus availability."
+  },
+  {
+    "code": "GE06",
+    "location": "Shenfield - Chelmsford",
+    "blockage": "partial",
+    "advice": "Activate GE06. Shuttle services may operate between Chelmsford and Witham. Reduce timetable where needed. Long-distance services may reroute via Braintree.",
+    "staff_notes": "Deploy station staff at Chelmsford and Witham. Notify signallers of revised working patterns.",
+    "alt_transport": [
+      "Greater Anglia trains via Braintree",
+      "Local buses between Chelmsford and Shenfield"
+    ],
+    "passenger_notes": "Expect delays. Inform of reroute options. Maintain updates on PIS and websites."
+  },
+  {
+    "code": "GE07",
+    "location": "Brickhouse - Witham",
+    "blockage": "partial",
+    "advice": "Activate GE07. Operate Bi-Directional working with pilotman. Prioritise peak-hour services. Use shuttle operations if available.",
+    "staff_notes": "MOMs to be stationed at Brickhouse and Witham. Inform Control and Operations teams.",
+    "alt_transport": [
+      "Local buses between Witham and Chelmsford",
+      "Alternative trains from Witham to London via Braintree"
+    ],
+    "passenger_notes": "Expect reduced service frequency. Staff to assist with onward connections."
+  },
+  {
+    "code": "GE08",
+    "location": "Witham - Colchester",
+    "blockage": "partial",
+    "advice": "Activate GE08. Use Bi-Directional working at Kelvedon and Marks Tey. Ensure hourly minimum shuttle frequency.",
+    "staff_notes": "Advise controllers of capacity limitations. TIM notifications to depots in Ipswich and Clacton.",
+    "alt_transport": [
+      "Bus shuttle between Witham and Colchester",
+      "Transfer via Cambridge route to Kings Cross"
+    ],
+    "passenger_notes": "Passengers to Colchester Town should use local buses. Expect up to 30-minute delays."
+  },
+  {
+    "code": "GE09",
+    "location": "Colchester - Manningtree",
+    "blockage": "partial",
+    "advice": "Activate GE09. Use single-line working. Operate Colchester–Liverpool Street shuttles. Reduce Manningtree throughput.",
+    "staff_notes": "Deploy platform staff at Manningtree and Colchester. Reroute where necessary.",
+    "alt_transport": [
+      "Rail replacement buses between Colchester and Manningtree",
+      "Cambridge to Kings Cross alternative"
+    ],
+    "passenger_notes": "Delays and cancellations possible. Announce via website and platform screens."
+  },
+  {
+    "code": "GE10",
+    "location": "Halifax Junction - Ipswich",
+    "blockage": "partial",
+    "advice": "Activate GE10. Delay expected. Reduced service between Manningtree and Ipswich. Consider bus replacement during peak times.",
+    "staff_notes": "Notify Ipswich station ops. Use platform displays and Twitter for customer messaging.",
+    "alt_transport": [
+      "Buses from Manningtree to Ipswich",
+      "Cambridge to Kings Cross diversion"
+    ],
+    "passenger_notes": "Announce delays. Advise checking nationalrail.co.uk for ongoing disruption status."
+  },
+  {
+    "code": "GE11",
+    "location": "Ipswich - East Suffolk Junction",
+    "blockage": "partial",
+    "advice": "Activate GE11. Down Main blocked. Use Bi-Directional working on Up Main. Reroute Norwich passengers via Cambridge. Bus Ipswich–Needham Mkt–Stowmarket.",
+    "staff_notes": "Inform traincrew via TIM. Staff support required at Ipswich and East Suffolk Junction.",
+    "alt_transport": [
+      "Bus replacement: Ipswich to Stowmarket via Needham Market",
+      "Reroute via Cambridge - Kings Cross"
+    ],
+    "passenger_notes": "Felixstowe trains replaced by bus (except Westerfield). TIM and website updates advised."
+  },
+  {
+    "code": "GE12",
+    "location": "Stowmarket - Haughley Junction",
+    "blockage": "partial",
+    "advice": "Activate GE12. Single-line working may be implemented. Delays on Norwich line expected. Operate shuttle Norwich-Diss and bus Stowmarket-Diss.",
+    "staff_notes": "Notify signal control and depots. Deploy staff to Stowmarket and Diss.",
+    "alt_transport": [
+      "Bus Stowmarket to Diss",
+      "Train shuttle Diss-Norwich"
+    ],
+    "passenger_notes": "Update boards with estimated delays. Reroute suggestions via Cambridge to be considered."
+  },
+  {
+    "code": "GE13",
+    "location": "Haughley Junction - Diss",
+    "blockage": "partial",
+    "advice": "Activate GE13. Reduce services on Down Main. Operate limited Up Main traffic. Local buses to cover skipped stops.",
+    "staff_notes": "Staff required at Haughley Junction and Diss to manage passenger transfers.",
+    "alt_transport": [
+      "Bus services connecting Haughley, Stowmarket and Diss"
+    ],
+    "passenger_notes": "Service interruption updates needed. Consider holding services at Norwich if necessary."
+  },
+  {
+    "code": "GE14",
+    "location": "Diss - Tivetshall",
+    "blockage": "partial",
+    "advice": "Activate GE14. Trains may terminate at Diss. Provide shuttle Diss-Norwich. Bus to cover Tivetshall segment.",
+    "staff_notes": "Deploy platform staff at Tivetshall and Diss. Notify ops control and arrange bus dispatch.",
+    "alt_transport": [
+      "Bus service from Diss to Tivetshall",
+      "Shuttle train to Norwich"
+    ],
+    "passenger_notes": "Advise journey extensions of 20-40 mins. Priority for passengers heading to Norwich."
+  },
+  {
+    "code": "GE15",
+    "location": "Tivetshall - Norwich",
+    "blockage": "partial",
+    "advice": "Activate GE15. Norwich-bound trains may be delayed. Operate shuttle if possible. Consider rerouting via Cambridge for intercity passengers.",
+    "staff_notes": "Deploy on-call staff to Norwich. Update passengers through social and station messaging.",
+    "alt_transport": [
+      "Cambridge – Kings Cross route (then to Norwich)",
+      "Taxi pool or bus backup from Diss"
+    ],
+    "passenger_notes": "Delay notifications required. Ensure updates on apps and help points."
+  },
+  {
+    "code": "GE16",
+    "location": "Liverpool Street - Stratford",
+    "blockage": "full",
+    "advice": "Activate GE16. Suspend all services from Liverpool Street. Use Cambridge route as alternative. Allow ticket acceptance across TfL, Underground, c2c.",
+    "staff_notes": "Support staff to be deployed at Stratford and Shenfield. Notify depots and update TIMs. Ensure on-call HQ staff at Liverpool Street.",
+    "alt_transport": [
+      "London Underground via any reasonable route",
+      "TfL Rail",
+      "c2c services via Fenchurch Street",
+      "Greater Anglia via Cambridge"
+    ],
+    "passenger_notes": "Delays and diversions expected. Announce ticket acceptance on alternative routes."
+  },
+  {
+    "code": "GE17",
+    "location": "Stratford - Shenfield",
+    "blockage": "full",
+    "advice": "Activate GE17. Provide bus replacement between Stratford and Shenfield. Divert passengers to alternative TOC services.",
+    "staff_notes": "Inform depot managers and customer service staff. Prepare signs and comms templates.",
+    "alt_transport": [
+      "Bus replacement Stratford-Shenfield",
+      "London Overground and c2c routes"
+    ],
+    "passenger_notes": "Ticket acceptance arranged across reasonable routes. Expect delays up to 45 mins."
+  },
+  {
+    "code": "GE18",
+    "location": "Shenfield - Chelmsford",
+    "blockage": "full",
+    "advice": "Activate GE18. Suspend through services. Provide buses Chelmsford-Shenfield. Consider local shuttle to Witham.",
+    "staff_notes": "Notify on-call ops and arrange signage at Chelmsford. Inform local bus operators.",
+    "alt_transport": [
+      "Bus service Chelmsford-Shenfield",
+      "Trains via Braintree line if active"
+    ],
+    "passenger_notes": "Passengers must change at Witham for Colchester-bound services. TIM updates required."
+  },
+  {
+    "code": "GE19",
+    "location": "Chelmsford - Witham",
+    "blockage": "full",
+    "advice": "Activate GE19. All trains terminate at Chelmsford. Bus Chelmsford-Witham. Consider Braintree-Witham shuttle.",
+    "staff_notes": "Notify Chelmsford and Witham stations. Inform controllers and depots.",
+    "alt_transport": [
+      "Bus between Chelmsford and Witham",
+      "Reroute Braintree line trains"
+    ],
+    "passenger_notes": "Update online journey planners. Delays 30-60 mins. Station announcements advised."
+  },
+  {
+    "code": "GE20",
+    "location": "Chelmsford - Shenfield",
+    "blockage": "full",
+    "advice": "Activate GE20. Use bus Witham-Billericay. Suspend Chelmsford-Shenfield services. Local buses to Colchester Town.",
+    "staff_notes": "Station staff required at Billericay, Chelmsford, Witham. Notify Greater Anglia and local councils.",
+    "alt_transport": [
+      "Bus Witham-Billericay",
+      "Local buses between Chelmsford and Colchester"
+    ],
+    "passenger_notes": "Service suspended in both directions. Announce alternative travel plans."
+  },
+  {
+    "code": "GE21",
+    "location": "Witham - Colchester",
+    "blockage": "full",
+    "advice": "Activate GE21. Rail replacement between Witham and Colchester. Reroute via Cambridge for longer journeys. Suspend Colchester Town branch.",
+    "staff_notes": "Deploy staff at Witham, Kelvedon, Marks Tey, and Colchester. Notify bus operators and station managers.",
+    "alt_transport": [
+      "Bus Witham-Colchester",
+      "Cambridge - Kings Cross route",
+      "Local buses Colchester - Colchester Town"
+    ],
+    "passenger_notes": "Journey extensions up to 90 mins. Real-time updates on PIS and social media recommended."
+  },
+  {
+    "code": "GE22",
+    "location": "Colchester - Manningtree",
+    "blockage": "full",
+    "advice": "Activate GE22. Rail replacement Colchester-Manningtree. Encourage Cambridge-GTR reroute. Suspend Harwich branch if needed.",
+    "staff_notes": "Staff support at Colchester and Manningtree. Request Octagon team presence. Notify freight control.",
+    "alt_transport": [
+      "Bus Colchester-Manningtree",
+      "Cambridge - Kings Cross reroute"
+    ],
+    "passenger_notes": "Allow Advance ticket holders ±60 minutes flexibility. Online journey planners must reflect updates."
+  },
+  {
+    "code": "GE23",
+    "location": "Manningtree - Ipswich",
+    "blockage": "full",
+    "advice": "Activate GE23. Bus replacement Ipswich-Manningtree. Maintain local Clacton and Norwich shuttles. Encourage reroute via Cambridge.",
+    "staff_notes": "Inform depots and platform staff at Ipswich. Use TIM displays for alerts. Check freight line constraints.",
+    "alt_transport": [
+      "Bus Manningtree-Ipswich",
+      "Reroute via Cambridge - Kings Cross"
+    ],
+    "passenger_notes": "Ensure updates across Greater Anglia app, PIS, and platform announcements."
+  },
+  {
+    "code": "GE24",
+    "location": "Ipswich - Stowmarket",
+    "blockage": "full",
+    "advice": "Activate GE24. Shunting at Stowmarket loop. Bus Ipswich-Stowmarket. Encourage use of Cambridge route for longer travel.",
+    "staff_notes": "Support staff needed at Ipswich and Stowmarket. Ensure drivers are briefed on route adjustment.",
+    "alt_transport": [
+      "Bus Ipswich-Stowmarket",
+      "Cambridge - Kings Cross alternate route"
+    ],
+    "passenger_notes": "Delays 30-60 mins expected. Inform passengers via help points and onboard announcements."
+  },
+  {
+    "code": "GE25",
+    "location": "Stowmarket - Diss",
+    "blockage": "full",
+    "advice": "Activate GE25. Bus replacement between Ipswich and Diss calling at all stations. Suspend Norwich–London direct service if needed.",
+    "staff_notes": "Coordinate with local bus services (87/88/459). Notify operations at Norwich and Ipswich.",
+    "alt_transport": [
+      "Bus Ipswich-Diss (87/88/459)",
+      "Cambridge-GTR reroute"
+    ],
+    "passenger_notes": "Passengers advised of long delays. Update live journey feeds and digital boards."
+  },
+  {
+    "code": "GE26",
+    "location": "Diss - Norwich",
+    "blockage": "full",
+    "advice": "Activate GE26. Norwich-bound trains terminate at Diss. Rail replacement between Diss and Norwich. Taxis may supplement bus coverage.",
+    "staff_notes": "Staff needed at Diss and Norwich. Inform platform, dispatch, and control teams.",
+    "alt_transport": [
+      "Bus Diss-Norwich",
+      "Taxi backup for urgent passengers"
+    ],
+    "passenger_notes": "Travel time extended. Keep Norwich help desk and social media up to date."
+  },
+  {
+    "code": "GE27",
+    "location": "Liverpool Street - Broxbourne",
+    "blockage": "full",
+    "advice": "Activate GE27. Rail replacement Broxbourne-Liverpool Street. Operate shuttle between Cambridge and Broxbourne.",
+    "staff_notes": "Staff at Broxbourne, Tottenham Hale, and Liverpool Street. Coordinate with TfL Overground.",
+    "alt_transport": [
+      "TfL Overground",
+      "Bus Broxbourne-Liverpool Street"
+    ],
+    "passenger_notes": "Ticket acceptance across reasonable routes. Warn of congestion at interchange stations."
+  },
+  {
+    "code": "GE28",
+    "location": "Ipswich - Felixstowe Branch",
+    "blockage": "full",
+    "advice": "Activate GE28. Suspend all Felixstowe services. Use rail replacement from Ipswich. Freight affected.",
+    "staff_notes": "Notify port control and freight operators. Ipswich team to manage connections.",
+    "alt_transport": [
+      "Bus Ipswich-Felixstowe"
+    ],
+    "passenger_notes": "Check port ferry schedules. Provide live updates via station announcements."
+  },
+  {
+    "code": "GE29",
+    "location": "Manningtree - Harwich Branch",
+    "blockage": "full",
+    "advice": "Activate GE29. Suspend Harwich services. Rail replacement Manningtree–Harwich. Notify port and ferry teams.",
+    "staff_notes": "Support needed at Harwich Town and Dovercourt. Notify Parkeston Quay control.",
+    "alt_transport": [
+      "Bus Manningtree-Harwich",
+      "Taxi service for time-sensitive passengers"
+    ],
+    "passenger_notes": "Ensure ferry passengers are given priority. Notify about disruption via station PA and signage."
+  },
+  {
+    "code": "GE30",
+    "location": "Thorpe-le-Soken - Clacton-on-Sea",
+    "blockage": "full",
+    "advice": "Activate GE30. Suspend Clacton services. Provide buses from Thorpe-le-Soken. Walton services unaffected.",
+    "staff_notes": "Platform staff required at Clacton and Thorpe-le-Soken. Inform local media and depots.",
+    "alt_transport": [
+      "Bus Thorpe-le-Soken-Clacton"
+    ],
+    "passenger_notes": "Announce which branch services continue to run. Recommend Walton route if appropriate."
+  },
+  {
+    "code": "GE31",
+    "location": "Thorpe-le-Soken - Walton-on-the-Naze",
+    "blockage": "full",
+    "advice": "Activate GE31. Suspend services to Walton-on-the-Naze. Rail replacement from Thorpe-le-Soken. Clacton branch not affected.",
+    "staff_notes": "Inform local teams at Thorpe-le-Soken and Walton. Notify depot and bus control.",
+    "alt_transport": [
+      "Bus Thorpe-le-Soken-Walton-on-the-Naze"
+    ],
+    "passenger_notes": "Maintain regular updates. Priority support for passengers with onward ferry connections."
+  },
+  {
+    "code": "GE32",
+    "location": "Marks Tey - Sudbury Branch",
+    "blockage": "full",
+    "advice": "Activate GE32. Suspend branch service. Provide bus between Marks Tey and Sudbury, calling all stations.",
+    "staff_notes": "Station announcements and temporary signage required. Coordinate with local bus operator.",
+    "alt_transport": [
+      "Bus Marks Tey-Sudbury (all stations)"
+    ],
+    "passenger_notes": "Adjust journey planners. Provide printed timetables where possible."
+  },
+  {
+    "code": "GE33",
+    "location": "Braintree Branch",
+    "blockage": "full",
+    "advice": "Activate GE33. Suspend all Braintree services. Bus Witham-Braintree Freeport. Notify Freeport staff.",
+    "staff_notes": "Station teams at Witham and Braintree to manage flow. Inform nearby businesses.",
+    "alt_transport": [
+      "Bus Witham-Braintree Freeport"
+    ],
+    "passenger_notes": "Maintain 30-min shuttle if bus delays occur. Update real-time apps."
+  },
+  {
+    "code": "GE34",
+    "location": "Southminster Branch",
+    "blockage": "full",
+    "advice": "Activate GE34. Suspend all services. Provide bus Wickford-Southminster calling all stops.",
+    "staff_notes": "Coordinate with bus control and Wickford depot. Update electronic boards.",
+    "alt_transport": [
+      "Bus Wickford-Southminster"
+    ],
+    "passenger_notes": "Notify journey time increases. Station help points and announcements needed."
+  },
+  {
+    "code": "GE35",
+    "location": "Manningtree - Harwich Branch (Partial)",
+    "blockage": "partial",
+    "advice": "Activate GE35. Bi-Directional working Manningtree-Parkeston. Suspend beyond Parkeston Quay. Bus to Harwich.",
+    "staff_notes": "Inform Parkeston and Harwich stations. Port coordination needed.",
+    "alt_transport": [
+      "Bus Parkeston-Harwich"
+    ],
+    "passenger_notes": "Notify ferry passengers. Update National Rail Enquiries."
+  },
+  {
+    "code": "GE36",
+    "location": "Ipswich Yard - Felixstowe Docks",
+    "blockage": "partial",
+    "advice": "Activate GE36. Divert freight via alternate terminals. Suspend passenger service to Felixstowe.",
+    "staff_notes": "Coordinate with DB Cargo and port control. Ipswich freight terminal must be updated.",
+    "alt_transport": [
+      "Bus Ipswich-Felixstowe"
+    ],
+    "passenger_notes": "Announce via freight news boards and station PIS."
+  },
+  {
+    "code": "GE37",
+    "location": "Colchester - Colchester Town",
+    "blockage": "full",
+    "advice": "Activate GE37. Suspend Colchester Town branch. Provide shuttle bus from Colchester main station.",
+    "staff_notes": "Notify local travel teams. Advise on local bus route integration.",
+    "alt_transport": [
+      "Bus Colchester-Colchester Town"
+    ],
+    "passenger_notes": "Provide clear signage. Local passengers advised to use First Bus network."
+  },
+  {
+    "code": "GE38",
+    "location": "Westerfield - Felixstowe",
+    "blockage": "full",
+    "advice": "Activate GE38. Suspend services to Felixstowe. Provide replacement bus from Ipswich. Alert port teams.",
+    "staff_notes": "Coordinate with Felixstowe port and bus services. Prepare digital alerts.",
+    "alt_transport": [
+      "Bus Ipswich-Felixstowe"
+    ],
+    "passenger_notes": "Announce port travel advice. Provide printed replacements at Ipswich."
+  },
+  {
+    "code": "GE39",
+    "location": "Marks Tey - Chappel & Wakes Colne",
+    "blockage": "partial",
+    "advice": "Activate GE39. Operate shuttle to Bures if possible. Bi-Directional working on open segment.",
+    "staff_notes": "Notify museum if events planned. Arrange signage and stewarding at Marks Tey.",
+    "alt_transport": [
+      "Bus Marks Tey-Bures/Chappel",
+      "Train shuttle if segment allows"
+    ],
+    "passenger_notes": "Passengers advised to allow additional time. Live updates recommended."
+  }
+]

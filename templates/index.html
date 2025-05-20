@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Emergency Chatbot</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <h1>Train Blockage Emergency Chatbot</h1>
+  <form id="contingency-form">
+    <label for="location-input">Enter Location (e.g. Ipswich):</label>
+    <input type="text" id="location-input" required />
+
+    <label for="blockage-input">Enter Blockage Type (full or partial):</label>
+    <input type="text" id="blockage-input" required />
+
+    <button type="submit">Get Advice</button>
+  </form>
+
+  <div id="contingency-result"></div>
+
+  <script src="/static/chatbot.js"></script>
+</body>
+</html>
