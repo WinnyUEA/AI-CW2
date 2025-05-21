@@ -11,17 +11,30 @@ def round_down_to_quarter(minute):
 
 def build_url(origin, destination, date_str, time_str, adults, children,
               return_date_str=None, return_time_str=None,
-              outbound_type="departing", return_type="departing"):
+              outbound_type="departing", return_type="departing",
+              time_preference="at"):
+    """
+    Build National Rail URL with time preference.
+    time_preference: 'at' (exact), 'by' (arrive by), or 'after' (depart after).
+    """
     day, month, year = date_str.split("/")
     hour, minute = time_str.split(":")
     minute = round_down_to_quarter(minute)
     leaving_date = f"{day}{month}{year[2:]}"
     leaving_hour = hour.zfill(2)
 
+    # Map preference to leavingType
+    if time_preference == "by":
+        leaving_type = "arriving"
+    elif time_preference == "after":
+        leaving_type = "departing"
+    else:
+        leaving_type = outbound_type
+
     params = {
         "origin": origin,
         "destination": destination,
-        "leavingType": outbound_type,
+        "leavingType": leaving_type,
         "leavingDate": leaving_date,
         "leavingHour": leaving_hour,
         "leavingMin": minute,
@@ -37,9 +50,17 @@ def build_url(origin, destination, date_str, time_str, adults, children,
         return_date = f"{r_day}{r_month}{r_year[2:]}"
         return_hour = r_hour.zfill(2)
 
+        # Map preference to returnType
+        if time_preference == "by":
+            return_type_final = "arriving"
+        elif time_preference == "after":
+            return_type_final = "departing"
+        else:
+            return_type_final = return_type
+
         params.update({
             "type": "return",
-            "returnType": return_type,
+            "returnType": return_type_final,
             "returnDate": return_date,
             "returnHour": return_hour,
             "returnMin": r_minute
@@ -209,12 +230,19 @@ def select_return_journey(driver, return_time_str, match_on_arrival=False):
 def run_national_scraper(
     origin, destination,
     depart_date, depart_time, depart_type,
+    time_preference="at",
     is_return=False, return_date=None, return_time=None, return_type="departing",
     adults="1", children="0"
 ):
+    # Build the URL using the new time_preference
     url, dep_hour, dep_minute = build_url(
-        origin, destination, depart_date, depart_time, adults, children,
-        return_date, return_time, outbound_type=depart_type, return_type=return_type
+        origin, destination,
+        depart_date, depart_time,
+        adults, children,
+        return_date, return_time,
+        outbound_type=depart_type,
+        return_type=return_type,
+        time_preference=time_preference
     )
 
     driver = webdriver.Chrome()
@@ -226,23 +254,24 @@ def run_national_scraper(
 
     if is_return:
         out_dep, out_arr, out_price = select_cheapest_outward_journey_within_time(
-            driver, dep_hour, dep_minute, match_on_arrival=(depart_type == "arriving")
+            driver, dep_hour, dep_minute,
+            match_on_arrival=(depart_type == "arriving")
         )
-
         return_dep, return_arr, return_price = select_return_journey(
-            driver, return_time, match_on_arrival=(return_type == "arriving")
+            driver, return_time,
+            match_on_arrival=(return_type == "arriving")
         )
-
         if out_price and return_price:
             total_price = out_price + return_price
     else:
         result = extract_cheapest_ticket(
-            driver, dep_hour, dep_minute, match_on_arrival=(depart_type == "arriving")
+            driver, dep_hour, dep_minute,
+            match_on_arrival=(depart_type == "arriving")
         )
         if result:
-            out_dep = result['dep_time']
-            out_arr = result['arr_time']
-            total_price = result['price']
+            out_dep = result["dep_time"]
+            out_arr = result["arr_time"]
+            total_price = result["price"]
 
     driver.quit()
 

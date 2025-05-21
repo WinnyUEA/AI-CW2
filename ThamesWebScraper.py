@@ -8,13 +8,15 @@ import time
 import re
 
 def build_thameslink_url(origin_crs, dest_crs, depart_date, depart_time, depart_type,
-                         adults="1", children="0"):
-    if depart_type == "arriving":
-        depart_ts = f"Arrive_at_{depart_date}T{depart_time}"
-    else:
-        depart_ts = f"{depart_date}T{depart_time}"
-
-    path = f"{origin_crs}/{dest_crs}/{depart_ts}//{adults}/{children}/"
+                         adults="1", children="0", time_preference="at"):
+    """
+    Build Thameslink URL with time preference.
+    time_preference: 'at' (exact depart), 'by' (arrive by), 'after' (depart after).
+    """
+    # Choose prefix
+    ts_prefix = "Arrive_at" if time_preference == "by" else "Depart_at"
+    timestamp = f"{ts_prefix}_{depart_date}T{depart_time}"
+    path = f"{origin_crs}/{dest_crs}/{timestamp}//{adults}/{children}/"
 
     params = {
         "departNow": "no",
@@ -27,7 +29,6 @@ def build_thameslink_url(origin_crs, dest_crs, depart_date, depart_time, depart_
 
     base_url = "https://ticket.thameslinkrailway.com/journeys-grid/"
     full_url = base_url + path + "?" + urlencode(params)
-
     hour, minute = depart_time.split(":")
     return full_url, int(hour), int(minute)
 
@@ -254,11 +255,11 @@ def click_cheapest_outbound_tile(driver, target_hour, target_minute, match_on_ar
 def run_thames_scraper(
     origin, destination,
     depart_date, depart_time, depart_type,
+    time_preference="at",
     is_return=False, return_date=None, return_time=None, return_type="departing",
     adults="1", children="0"
 ):
-    # ←——— ADD THIS BLOCK:
-    from datetime import datetime
+    # Normalize dates to YYYY-MM-DD
     try:
         depart_date = datetime.strptime(depart_date, "%d/%m/%Y").strftime("%Y-%m-%d")
         if return_date:
@@ -268,15 +269,21 @@ def run_thames_scraper(
 
     if is_return:
         url, dep_hour, dep_minute, ret_hour, ret_minute = build_thameslink_return_url(
-            origin, destination, depart_date, depart_time,
+            origin, destination,
+            depart_date, depart_time,
             return_date, return_time,
-            depart_type, return_type, adults, children
+            depart_type, return_type,
+            adults, children
         )
     else:
         url, dep_hour, dep_minute = build_thameslink_url(
-            origin, destination, depart_date, depart_time,
-            depart_type, adults, children
+            origin, destination,
+            depart_date, depart_time,
+            depart_type,
+            adults, children,
+            time_preference=time_preference
         )
+
     driver = webdriver.Chrome()
     driver.get(url)
     accept_cookies_if_present(driver)
@@ -286,35 +293,31 @@ def run_thames_scraper(
 
     if is_return:
         out_dep, out_arr, _ = extract_cheapest_single_ticket(
-            driver, dep_hour, dep_minute, match_on_arrival=(depart_type == "arriving")
+            driver, dep_hour, dep_minute,
+            match_on_arrival=(depart_type == "arriving")
         )
-
         return_dep, return_arr, _ = extract_cheapest_return_journey(
-            driver, ret_hour, ret_minute, match_on_arrival=(return_type == "arriving")
+            driver, ret_hour, ret_minute,
+            match_on_arrival=(return_type == "arriving")
         )
-
-        # Get basket price
+        # scrape basket total...
         try:
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-            import time
-
             time.sleep(5)
             total_elem = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.grid-basket-summary-v2__ticket__body__total .sr-text"))
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "div.grid-basket-summary-v2__ticket__body__total .sr-text")
+                )
             )
-            price_text = total_elem.text.strip()
-            total_price = float(price_text.replace("£", "").strip())
+            total_price = float(total_elem.text.strip().replace("£", ""))
         except:
             total_price = None
     else:
         out_dep, out_arr, total_price = extract_cheapest_single_ticket(
-            driver, dep_hour, dep_minute, match_on_arrival=(depart_type == "arriving")
+            driver, dep_hour, dep_minute,
+            match_on_arrival=(depart_type == "arriving")
         )
 
     driver.quit()
-
     return {
         "origin": origin,
         "destination": destination,
@@ -325,6 +328,7 @@ def run_thames_scraper(
         "total_price": total_price,
         "url": url
     }
+
 # def main():
 #     print("=== Thameslink Cheapest Ticket Finder (with 'Arrive By' + Return Click Total) ===")
 #
