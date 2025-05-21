@@ -723,44 +723,54 @@ class TrainTicketChatbotWithBooking:
         # Detect route for station matching
         route = self.detect_route(text)
 
-        # Extract stations with route context
+        # --- STATION MATCHING ---
         from_match = re.search(
-            r'(?:from|departing)\s+([a-z\s]+?)\s+(?:to|going to|arriving in|arriving at)\s+([a-z\s]+?)(?:\s|$)', text,
-            re.IGNORECASE)
+            r'(?:from|departing)\s+([a-z\s]+?)\s+'
+            r'(?:to|going to|arriving in|arriving at)\s+([a-z\s]+?)(?:\s|$)',
+            text, re.IGNORECASE
+        )
         if from_match:
             from_station = self.match_station(from_match.group(1), route)
             to_station = self.match_station(from_match.group(2), route)
             print(f"Matched stations: from={from_station}, to={to_station}")
             if from_station and to_station:
-                extracted['origin'] = self.station_codes.get(from_station.lower(), None)
-                extracted['destination'] = self.station_codes.get(to_station.lower(), None)
-                if not extracted['origin']:
-                    print(f"No station code found for {from_station}")
-                if not extracted['destination']:
-                    print(f"No station code found for {to_station}")
+                extracted['origin'] = self.station_codes.get(from_station.lower())
+                extracted['destination'] = self.station_codes.get(to_station.lower())
 
-        # Extract date by checking for relative date terms or explicit dates
-        relative_date_terms = ['today', 'tomorrow', 'day after tomorrow', 'next', 'in ', 'on ']
-        for term in relative_date_terms:
-            if term in text.lower():
-                parsed_date = self.parse_relative_date(text)
-                if parsed_date:
-                    if self.booking_details.get('is_return'):
-                        extracted['return_date'] = parsed_date
-                    else:
-                        extracted['date'] = parsed_date
-                    break
-        if not extracted.get('date') and not extracted.get('return_date'):
+        # --- DATE EXTRACTION ---
+        lower = text.lower()
+        # Regex to find relative-date phrases anywhere in the input
+        rel_pattern = (
+            r'\b('
+            r'today|tomorrow|day after tomorrow|'
+            r'next\s+\w+|'
+            r'in\s+\d+\s+(?:day|days|week|weeks)|'
+            r'on\s+\w+'
+            r')\b'
+        )
+        m = re.search(rel_pattern, lower)
+        if m:
+            # Parse only the matched phrase
+            phrase = m.group(1)
+            parsed = self.parse_relative_date(phrase)
+            if parsed:
+                if self.booking_details.get('is_return'):
+                    extracted['return_date'] = parsed
+                else:
+                    extracted['date'] = parsed
+        else:
+            # Fallback: fuzzy-parse any explicit date in the text
             try:
                 dt = parse(text, fuzzy=True, dayfirst=True)
+                out = dt.strftime('%d/%m/%Y')
                 if self.booking_details.get('is_return'):
-                    extracted['return_date'] = dt.strftime('%d/%m/%Y')
+                    extracted['return_date'] = out
                 else:
-                    extracted['date'] = dt.strftime('%d/%m/%Y')
+                    extracted['date'] = out
             except:
                 pass
 
-        # Extract time
+        # --- TIME EXTRACTION ---
         time_match = re.search(r'(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)', text, re.IGNORECASE)
         if time_match:
             parsed_time = self.parse_time(time_match.group(0))
@@ -770,15 +780,19 @@ class TrainTicketChatbotWithBooking:
                 else:
                     extracted['time'] = parsed_time
 
-        # Set defaults
+        # --- DEFAULT PASSENGERS ---
         extracted.setdefault('adults', '1')
         extracted.setdefault('children', '0')
 
-        # Check required fields based on booking_details
+        # --- CHECK REQUIRED FIELDS & MISSING ---
         required = ['origin', 'destination', 'date', 'time']
         if self.booking_details.get('is_return'):
             required.extend(['return_date', 'return_time'])
-        missing = [field for field in required if not (extracted.get(field) or self.booking_details.get(field))]
+
+        missing = [
+            field for field in required
+            if not (extracted.get(field) or self.booking_details.get(field))
+        ]
 
         print(f"Extracted: {extracted}")
         print(f"Missing: {missing}")
@@ -1050,7 +1064,10 @@ class TrainTicketChatbotWithBooking:
             return self.make_delay_prediction()
 
     def generate_response(self, user_input: str) -> str:
+        # Log the raw input
         self.log_conversation(user_input, "")
+
+        # Empty‐input guard
         if not user_input.strip():
             if self.current_state == self.STATES['GET_MISSING_INFO']:
                 return "Please provide the missing information: " + self.generate_missing_prompt(self.missing_fields)
@@ -1058,10 +1075,12 @@ class TrainTicketChatbotWithBooking:
 
         intent = self.detect_intent(user_input)
 
+        # Farewell at any time
         if intent == "farewell":
             self.current_state = self.STATES['FAREWELL']
             return random.choice(self.farewells)
 
+        # GREETING → OPTIONS
         if self.current_state == self.STATES['GREETING']:
             if intent == "delay_inquiry":
                 self.current_state = self.STATES['DELAY_INQUIRY']
@@ -1070,6 +1089,7 @@ class TrainTicketChatbotWithBooking:
                 self.current_state = self.STATES['GET_OPTION']
                 return f"{random.choice(self.greetings)}\n{self.options_prompt}"
 
+        # GET_OPTION → either DELAY or BOOKING flow
         elif self.current_state == self.STATES['GET_OPTION']:
             if intent == "delay_inquiry" or "2" in user_input:
                 self.current_state = self.STATES['DELAY_INQUIRY']
@@ -1082,140 +1102,84 @@ class TrainTicketChatbotWithBooking:
                 return random.choice(self.farewells)
             else:
                 return "I didn't understand that. Please choose:\n1. Book tickets\n2. Check for delays\n3. Exit"
-                """Handle complex delay inquiries"""
-        intent = self.detect_intent(user_input)
 
-        if intent == "complex_delay_inquiry":
-            # Extract available information first
-            extracted = self.extract_delay_info(user_input)
+        # COMPLEX DELAY HANDLING
+        elif intent == "complex_delay_inquiry":
+            # ... your existing complex‐delay logic here ...
+            return self.handle_complex_delay(user_input)
 
-            # Store what we found
-            if extracted.get('route'):
-                self.delay_details['route'] = extracted['route']
-            if extracted.get('delay'):
-                self.delay_details['reported_delay'] = extracted['delay']
-
-            # Determine what's missing
-            missing = []
-            if not self.delay_details.get('route'):
-                missing.append('route')
-            if not self.delay_details.get('current_station'):
-                missing.append('current_station')
-            if not self.delay_details.get('destination'):
-                missing.append('destination')
-            if not self.delay_details.get('reported_delay'):
-                missing.append('delay_duration')
-
-            # Ask for missing information
-            if missing:
-                prompts = {
-                    'route': "Which route are you on? (Norwich to London or London to Norwich)",
-                    'current_station': "Which station are you currently at?",
-                    'destination': "Which station is your destination?",
-                    'delay_duration': "How many minutes delayed is your train?"
-                }
-
-                # Prioritize questions - get route first if missing
-                if 'route' in missing:
-                    self.current_state = self.STATES['DELAY_INQUIRY']
-                    return prompts['route']
-
-                # Then current station
-                if 'current_station' in missing:
-                    self.current_state = self.STATES['GET_CURRENT_STATION']
-                    return prompts['current_station']
-
-                # Then delay duration
-                if 'delay_duration' in missing:
-                    self.current_state = self.STATES['GET_DELAY_DURATION']
-                    return prompts['delay_duration']
-
-                # Finally destination
-                if 'destination' in missing:
-                    self.current_state = self.STATES['GET_DESTINATION']
-                    return prompts['destination']
-
-            # If we have everything, make prediction
-            else:
-                return self.make_delay_prediction()
-
-
+        # DELAY INQUIRY STATES
         elif self.current_state == self.STATES['DELAY_INQUIRY']:
-            # Check for route specification
-            if "norwich" in user_input.lower() and "london" in user_input.lower():
-                if "to" in user_input.lower() and user_input.lower().index("norwich") < user_input.lower().index(
-                        "london"):
-                    self.delay_details = {'route': 'Norwich-LST'}
-                else:
-                    self.delay_details = {'route': 'LST-Norwich'}
-
-                self.current_state = self.STATES['GET_CURRENT_STATION']
-                return "Which station are you currently at?"
-            return "Please specify your route as 'Norwich to London' or 'London to Norwich'"
-
-        elif self.current_state == self.STATES['ASK_RETURN']:
-            if user_input.lower() in ['yes', 'y']:
-                self.booking_details['is_return'] = True
-                self.current_state = self.STATES['GET_MISSING_INFO']
-                self.missing_fields = ['return_date', 'return_time']
-                return "Please provide your return date and time (e.g. 'June 6th at 4pm')"
-            elif user_input.lower() in ['no', 'n']:
-                self.booking_details['is_return'] = False
-                self.booking_details['confirmed'] = True
-                return self.process_booking(confirm=True)
-            else:
-                return "Please respond with 'yes' or 'no' to indicate if you want a return ticket."
-
+            return self.handle_delay_inquiry(user_input)
         elif self.current_state == self.STATES['GET_CURRENT_STATION']:
-            matched_station = self.match_station(user_input)
-            if matched_station:
-                self.delay_details['current_station'] = self.station_codes.get(
-                    matched_station.lower())  # Store station code
-                self.current_state = self.STATES['GET_DELAY_DURATION']
-                return "How many minutes delayed?"
-            return "Station not recognized. Please try again."
-
-
+            return self.handle_current_station(user_input)
         elif self.current_state == self.STATES['GET_DELAY_DURATION']:
-            match = re.search(r'(\d+)', user_input)
-            if match:
-                self.delay_details['reported_delay'] = int(match.group(1))
-                self.current_state = self.STATES['GET_DESTINATION']
-                return "Which station is your destination?"
-            return "Please specify the delay in minutes (e.g., '15 minutes')."
+            return self.handle_delay_duration(user_input)
+        elif self.current_state == self.STATES['GET_DESTINATION']:
+            return self.handle_destination_input(user_input)
 
-
-
+        # PARSE_BOOKING → extract details
         elif self.current_state == self.STATES['PARSE_BOOKING']:
             extracted, missing = self.extract_booking_info(user_input)
             if extracted:
                 self.booking_details.update(extracted)
                 self.missing_fields = missing
                 if not missing:
-                    self.booking_details['confirmed'] = False
+                    # all core fields gathered; now ask about return
                     self.current_state = self.STATES['ASK_RETURN']
-                    return self.process_booking()
+                    return self.process_booking()  # shows summary + "Would you like a return ticket?"
                 else:
-                    response = "I understood:"
-                    if 'origin' in extracted or self.booking_details['origin']:
-                        response += f"\n- From: {self.get_station_name(extracted.get('origin', self.booking_details['origin']))}"
-                    if 'destination' in extracted or self.booking_details['destination']:
-                        response += f"\n- To: {self.get_station_name(extracted.get('destination', self.booking_details['destination']))}"
-                    if 'date' in extracted or self.booking_details['date']:
-                        response += f"\n- Date: {extracted.get('date', self.booking_details['date'])}"
-                    if 'time' in extracted or self.booking_details['time']:
-                        response += f"\n- Time: {extracted.get('time', self.booking_details['time'])}"
-                    response += "\n\n" + self.generate_missing_prompt(missing)
+                    # still missing something
                     self.current_state = self.STATES['GET_MISSING_INFO']
+                    response = "I understood:"
+                    if 'origin' in extracted:
+                        response += f"\n- From: {self.get_station_name(extracted['origin'])}"
+                    if 'destination' in extracted:
+                        response += f"\n- To: {self.get_station_name(extracted['destination'])}"
+                    if 'date' in extracted:
+                        response += f"\n- Date: {extracted['date']}"
+                    if 'time' in extracted:
+                        response += f"\n- Time: {extracted['time']}"
+                    response += "\n\n" + self.generate_missing_prompt(missing)
                     return response
             return ("I couldn't understand your booking request. "
                     "Please try something like: 'I want to travel from Norwich to London tomorrow at 3pm'")
 
+        # GET_MISSING_INFO → fill in any leftover fields
+        elif self.current_state == self.STATES['GET_MISSING_INFO']:
+            extracted, missing = self.extract_booking_info(user_input)
+            if extracted:
+                for k, v in extracted.items():
+                    if v:
+                        self.booking_details[k] = v
+                self.missing_fields = missing
+                if not missing:
+                    # all done, confirm booking
+                    self.booking_details['confirmed'] = True
+                    return self.process_booking(confirm=True)
+                else:
+                    response = "I understood:"
+                    if self.booking_details.get('origin'):
+                        response += f"\n- From: {self.get_station_name(self.booking_details['origin'])}"
+                    if self.booking_details.get('destination'):
+                        response += f"\n- To: {self.get_station_name(self.booking_details['destination'])}"
+                    if self.booking_details.get('date'):
+                        response += f"\n- Date: {self.booking_details['date']}"
+                    if self.booking_details.get('time'):
+                        response += f"\n- Time: {self.booking_details['time']}"
+                    # If return is in progress, prompt for missing return fields
+                    if 'return_date' in missing or 'return_time' in missing:
+                        response += "\n\n" + self.generate_missing_prompt(missing)
+                    return response
+            return "Please provide the missing information: " + self.generate_missing_prompt(self.missing_fields)
+
+        # ASK_RETURN → single handler only
         elif self.current_state == self.STATES['ASK_RETURN']:
             if user_input.lower() in ['yes', 'y']:
                 self.booking_details['is_return'] = True
                 self.current_state = self.STATES['GET_MISSING_INFO']
-                return "Please provide your return date and time (e.g. 'June 6th at 4pm')"
+                self.missing_fields = ['return_date', 'return_time']
+                return "Sure—please provide your return date and time (e.g. 'June 6th at 4pm')"
             elif user_input.lower() in ['no', 'n']:
                 self.booking_details['is_return'] = False
                 self.booking_details['confirmed'] = True
@@ -1223,40 +1187,12 @@ class TrainTicketChatbotWithBooking:
             else:
                 return "Please respond with 'yes' or 'no' to indicate if you want a return ticket."
 
-        elif self.current_state == self.STATES['GET_MISSING_INFO']:
-            extracted, missing = self.extract_booking_info(user_input)
-            if extracted:
-                # Update only the fields provided in extracted, preserving existing booking_details
-                for key, value in extracted.items():
-                    if value:
-                        self.booking_details[key] = value
-                self.missing_fields = missing
-                if not missing:
-                    self.booking_details['confirmed'] = True
-                    return self.process_booking(confirm=True)
-                else:
-                    response = "I understood:"
-                    if self.booking_details['origin']:
-                        response += f"\n- From: {self.get_station_name(self.booking_details['origin'])}"
-                    if self.booking_details['destination']:
-                        response += f"\n- To: {self.get_station_name(self.booking_details['destination'])}"
-                    if self.booking_details['date']:
-                        response += f"\n- Date: {self.booking_details['date']}"
-                    if self.booking_details['time']:
-                        response += f"\n- Time: {self.booking_details['time']}"
-                    if self.booking_details.get('return_date'):
-                        response += f"\n- Return Date: {self.booking_details['return_date']}"
-                    if self.booking_details.get('return_time'):
-                        response += f"\n- Return Time: {self.booking_details['return_time']}"
-                    response += "\n\n" + self.generate_missing_prompt(missing)
-                    return response
-            return "Please provide the missing information: " + self.generate_missing_prompt(self.missing_fields)
+        # FAREWELL state
+        elif self.current_state == self.STATES['FAREWELL']:
+            return random.choice(self.farewells)
 
-        elif self.current_state == self.STATES['GET_DESTINATION']:
-            response = self.handle_destination_input(user_input)
-            if "Normally this journey" in response:  # Successful prediction
-                self.current_state = self.STATES['GET_OPTION']
-            return response
+        # Catch-all
+        return "Sorry, I didn't understand that."
 
     def process_booking(self, confirm=False):
         summary = "Here's your journey summary:\n"
