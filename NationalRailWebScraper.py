@@ -9,7 +9,9 @@ import time
 def round_down_to_quarter(minute):
     return str((int(minute) // 15) * 15).zfill(2)
 
-def build_url(origin, destination, date_str, time_str, adults, children, return_date_str=None, return_time_str=None):
+def build_url(origin, destination, date_str, time_str, adults, children,
+              return_date_str=None, return_time_str=None,
+              outbound_type="departing", return_type="departing"):
     day, month, year = date_str.split("/")
     hour, minute = time_str.split(":")
     minute = round_down_to_quarter(minute)
@@ -19,7 +21,7 @@ def build_url(origin, destination, date_str, time_str, adults, children, return_
     params = {
         "origin": origin,
         "destination": destination,
-        "leavingType": "departing",
+        "leavingType": outbound_type,
         "leavingDate": leaving_date,
         "leavingHour": leaving_hour,
         "leavingMin": minute,
@@ -37,7 +39,7 @@ def build_url(origin, destination, date_str, time_str, adults, children, return_
 
         params.update({
             "type": "return",
-            "returnType": "departing",
+            "returnType": return_type,
             "returnDate": return_date,
             "returnHour": return_hour,
             "returnMin": r_minute
@@ -57,7 +59,7 @@ def accept_cookies_if_present(driver):
     except:
         print("✅ No cookie popup appeared or already handled.")
 
-def extract_cheapest_ticket(driver, target_hour, target_minute):
+def extract_cheapest_ticket(driver, target_hour, target_minute, match_on_arrival=False):
     time.sleep(10)
     cards = driver.find_elements(By.CSS_SELECTOR, "section[data-testid^='result-card-section-outward']")
     cheapest_price = float("inf")
@@ -72,12 +74,14 @@ def extract_cheapest_ticket(driver, target_hour, target_minute):
             dep_time_str = times[0].text.strip()
             arr_time_str = times[1].text.strip()
 
-            dep_time = datetime.strptime(dep_time_str, "%H:%M")
-            dep_minutes = dep_time.hour * 60 + dep_time.minute
+            match_time = arr_time_str if match_on_arrival else dep_time_str
+            match_dt = datetime.strptime(match_time, "%H:%M")
+            match_minutes = match_dt.hour * 60 + match_dt.minute
             target_minutes = target_hour * 60 + target_minute
-            diff = abs(dep_minutes - target_minutes)
+            diff = abs(match_minutes - target_minutes)
 
-            if diff > 30:
+            max_diff = 60 if match_on_arrival else 30
+            if diff > max_diff:
                 continue
 
             price_elem = card.find_element(By.XPATH, ".//span[contains(text(), '£')]")
@@ -97,8 +101,7 @@ def extract_cheapest_ticket(driver, target_hour, target_minute):
 
     return best_match
 
-
-def select_cheapest_outward_journey_within_time(driver, target_hour, target_minute):
+def select_cheapest_outward_journey_within_time(driver, target_hour, target_minute, match_on_arrival=False):
     time.sleep(10)
     cards = driver.find_elements(By.CSS_SELECTOR, "section[data-testid^='result-card-section-outward']")
     best_card = None
@@ -115,12 +118,13 @@ def select_cheapest_outward_journey_within_time(driver, target_hour, target_minu
             dep_time_str = times[0].text.strip()
             arr_time_str = times[1].text.strip()
 
-            dep_time = datetime.strptime(dep_time_str, "%H:%M")
-            dep_minutes = dep_time.hour * 60 + dep_time.minute
+            match_time = arr_time_str if match_on_arrival else dep_time_str
+            match_dt = datetime.strptime(match_time, "%H:%M")
+            match_minutes = match_dt.hour * 60 + match_dt.minute
             target_minutes = target_hour * 60 + target_minute
-            diff = abs(dep_minutes - target_minutes)
 
-            if diff > 30:
+            max_diff = 60 if match_on_arrival else 30
+            if abs(match_minutes - target_minutes) > max_diff:
                 continue
 
             price_elem = card.find_element(By.XPATH, ".//span[contains(text(), '£')]")
@@ -145,14 +149,13 @@ def select_cheapest_outward_journey_within_time(driver, target_hour, target_minu
         except Exception as e:
             print(f"❌ Failed to click selected ticket: {e}")
     else:
-        print("❌ No ticket found within ±60 minutes.")
+        print("❌ No ticket found within ±60 minutes." if match_on_arrival else "❌ No ticket found within ±30 minutes.")
 
     return None, None, None
 
-
-def select_return_journey(driver, return_time_str):
+def select_return_journey(driver, return_time_str, match_on_arrival=False):
     user_return_time = datetime.strptime(return_time_str, "%H:%M")
-    time_window = timedelta(minutes=30)
+    time_window = timedelta(minutes=60 if match_on_arrival else 30)
     time.sleep(10)
     journey_sections = driver.find_elements(By.CSS_SELECTOR, 'section[id^="inward-"]')
 
@@ -170,9 +173,10 @@ def select_return_journey(driver, return_time_str):
 
             dep_time_str = times[0].text.strip()
             arr_time_str = times[1].text.strip()
-            dep_time = datetime.strptime(dep_time_str, "%H:%M")
+            compare_time_str = arr_time_str if match_on_arrival else dep_time_str
+            compare_time = datetime.strptime(compare_time_str, "%H:%M")
 
-            time_diff = abs(dep_time - user_return_time)
+            time_diff = abs(compare_time - user_return_time)
             if time_diff > time_window:
                 continue
 
@@ -198,110 +202,136 @@ def select_return_journey(driver, return_time_str):
         except Exception as e:
             print(f"❌ Failed to click return journey: {e}")
     else:
-        print("❌ No suitable return journey found within ±60 minutes.")
+        print("❌ No suitable return journey found within ±60 minutes." if match_on_arrival else "❌ No suitable return journey found within ±30 minutes.")
 
     return None, None, None
 
-
-def main():
-    print("=== National Rail Cheapest Ticket Finder ===")
-    origin = input("Enter Origin Station Code (e.g., PAD): ").strip().upper()
-    destination = input("Enter Destination Station Code (e.g., NRW): ").strip().upper()
-    date_str = input("Enter Travel Date (DD/MM/YYYY): ").strip()
-    time_str = input("Enter Departure Time (HH:MM, 24-hour format): ").strip()
-    adults = input("Number of Adults (default 1): ").strip() or "1"
-    children = input("Number of Children (default 0): ").strip() or "0"
-
-    is_return = input("Is this a return journey? (yes/no): ").strip().lower()
-    return_date_str = None
-    return_time_str = None
-
-    if is_return == "yes":
-        return_date_str = input("Enter Return Date (DD/MM/YYYY): ").strip()
-        return_time_str = input("Enter Return Time (HH:MM, 24-hour format): ").strip()
-
-    journey_url, target_hour, target_minute = build_url(
-        origin, destination, date_str, time_str, adults, children, return_date_str, return_time_str
+def run_national_scraper(
+    origin, destination,
+    depart_date, depart_time, depart_type,
+    is_return=False, return_date=None, return_time=None, return_type="departing",
+    adults="1", children="0"
+):
+    url, dep_hour, dep_minute = build_url(
+        origin, destination, depart_date, depart_time, adults, children,
+        return_date, return_time, outbound_type=depart_type, return_type=return_type
     )
 
-    print(f"🌐 Opening browser to:\n{journey_url}")
     driver = webdriver.Chrome()
-    driver.get(journey_url)
-
+    driver.get(url)
     accept_cookies_if_present(driver)
 
-    if is_return == "yes":
-        print("🔍 Looking for the best outward journey within ±60 mins...")
-        outward_time, outward_arrival, outward_price = select_cheapest_outward_journey_within_time(driver, target_hour, target_minute)
+    out_dep = out_arr = return_dep = return_arr = None
+    total_price = None
 
-        print("🔄 Now extracting best return journey within ±60 mins of return time...")
-        return_time, return_arrival, return_price = select_return_journey(driver, return_time_str)
+    if is_return:
+        out_dep, out_arr, out_price = select_cheapest_outward_journey_within_time(
+            driver, dep_hour, dep_minute, match_on_arrival=(depart_type == "arriving")
+        )
 
-        total_price = outward_price
+        return_dep, return_arr, return_price = select_return_journey(
+            driver, return_time, match_on_arrival=(return_type == "arriving")
+        )
 
-        print("\n🧾 Summary of Selected Journey:")
-        print("----------------------------------")
-        print(f"🚆 Outward: {outward_time} → {outward_arrival} | £{outward_price:.2f}" if outward_time else "❌ No outward journey found")
-        print(f"🔁 Return : {return_time} → {return_arrival} | £{return_price:.2f}" if return_time else "❌ No return journey found")
-        print(f"💷 Outward Price Only: £{total_price:.2f}" if total_price else "💷 Outward Price: N/A")
-        print(f"🌐 Final Booking URL: {journey_url}")
-        print("----------------------------------")
-
-        input("\n👉 Press ENTER to close browser.")
-        driver.quit()
+        if out_price and return_price:
+            total_price = out_price + return_price
     else:
-        print("🔍 Scanning results for cheapest ticket near your time...")
-        best_match = extract_cheapest_ticket(driver, target_hour, target_minute)
-        driver.quit()
+        result = extract_cheapest_ticket(
+            driver, dep_hour, dep_minute, match_on_arrival=(depart_type == "arriving")
+        )
+        if result:
+            out_dep = result['dep_time']
+            out_arr = result['arr_time']
+            total_price = result['price']
 
-        if best_match:
-            print(f"\n💸 Cheapest ticket near {time_str}:")
-            print(f"🕓 {best_match['dep_time']} → {best_match['arr_time']}")
-            print(f"💷 Price: £{best_match['price']:.2f}")
-            print(f"🔗 URL: {journey_url}")
-        else:
-            print("\n❌ No suitable tickets found within ±30 minutes of your time.")
+    driver.quit()
 
-def run_national_scraper(origin, destination, date_str, time_str, adults, children, return_date_str=None, return_time_str=None):
-    journey_url, target_hour, target_minute = build_url(
-        origin, destination, date_str, time_str, adults, children, return_date_str, return_time_str
-    )
-    driver = webdriver.Chrome()
-    driver.get(journey_url)
-    accept_cookies_if_present(driver)
-
-    if return_date_str and return_time_str:
-        out_dep, out_arr, out_price = select_cheapest_outward_journey_within_time(driver, target_hour, target_minute)
-        ret_dep, ret_arr, ret_price = select_return_journey(driver, return_time_str)
-        driver.quit()
-
-        if out_price and ret_price:
-            return {
-                "provider": "National Rail",
-                "total_price": ret_price,
-                "out_dep": out_dep, "out_arr": out_arr, "out_price": out_price,
-                "ret_dep": ret_dep, "ret_arr": ret_arr, "ret_price": ret_price,
-                "url": journey_url
-            }
-
-    else:
-        best_match = extract_cheapest_ticket(driver, target_hour, target_minute)
-        driver.quit()
-
-        if best_match:
-            return {
-                "provider": "National Rail",
-                "total_price": best_match["price"],
-                "out_dep": best_match["dep_time"],
-                "out_arr": best_match["arr_time"],
-                "out_price": best_match["price"],
-                "url": journey_url
-            }
-
-    return None
+    return {
+        "origin": origin,
+        "destination": destination,
+        "out_dep": out_dep,
+        "out_arr": out_arr,
+        "return_dep": return_dep,
+        "return_arr": return_arr,
+        "total_price": total_price,
+        "url": url
+    }
 
 
-
-
+# def main():
+#     print("=== National Rail Cheapest Ticket Finder (with 'Arrive By') ===")
+#     origin = input("Enter Origin Station Code (e.g., PAD): ").strip().upper()
+#     destination = input("Enter Destination Station Code (e.g., NRW): ").strip().upper()
+#     date_str = input("Enter Travel Date (DD/MM/YYYY): ").strip()
+#     time_str = input("Enter Time (HH:MM, 24-hour format): ").strip()
+#     time_type = input("Is this time for 'depart by' or 'arrive by'? ").strip().lower()
+#     adults = input("Number of Adults (default 1): ").strip() or "1"
+#     children = input("Number of Children (default 0): ").strip() or "0"
+#
+#     is_return = input("Is this a return journey? (yes/no): ").strip().lower()
+#     return_date_str = None
+#     return_time_str = None
+#     return_time_type = "departing"
+#
+#     outbound_type = "arriving" if time_type == "arrive by" else "departing"
+#
+#     if is_return == "yes":
+#         return_date_str = input("Enter Return Date (DD/MM/YYYY): ").strip()
+#         return_time_str = input("Enter Return Time (HH:MM, 24-hour format): ").strip()
+#         return_time_type_input = input("Is return time for 'depart by' or 'arrive by'? ").strip().lower()
+#         return_time_type = "arriving" if return_time_type_input == "arrive by" else "departing"
+#
+#     journey_url, target_hour, target_minute = build_url(
+#         origin, destination, date_str, time_str, adults, children,
+#         return_date_str, return_time_str, outbound_type, return_time_type
+#     )
+#
+#     print(f"🌐 Opening browser to:\n{journey_url}")
+#     driver = webdriver.Chrome()
+#     driver.get(journey_url)
+#     accept_cookies_if_present(driver)
+#
+#     if is_return == "yes":
+#         print("🔍 Looking for outward journey...")
+#         outward_time, outward_arrival, outward_price = select_cheapest_outward_journey_within_time(
+#             driver, target_hour, target_minute, match_on_arrival=(outbound_type == "arriving")
+#         )
+#
+#         print("🔁 Looking for return journey...")
+#         return_time, return_arrival, return_price = select_return_journey(
+#             driver, return_time_str, match_on_arrival=(return_time_type == "arriving")
+#         )
+#
+#         driver.quit()
+#         print("\n🧾 Round Trip Summary:")
+#         print("------------------------------")
+#         if outward_time:
+#             print(f"🚆 Outward: {outward_time} → {outward_arrival} | £{outward_price:.2f}")
+#         else:
+#             print("❌ No outward journey found")
+#
+#         if return_time:
+#             print(f"🔁 Return: {return_time} → {return_arrival} | £{return_price:.2f}")
+#         else:
+#             print("❌ No return journey found")
+#
+#         if outward_price and return_price:
+#             print(f"💷 Total: £{return_price:.2f}")
+#         print(f"🔗 URL: {journey_url}")
+#
+#     else:
+#         print("🔍 Searching for single journey...")
+#         best_match = extract_cheapest_ticket(driver, target_hour, target_minute, match_on_arrival=(outbound_type == "arriving"))
+#         driver.quit()
+#
+#         print("\n🧾 Single Journey Summary:")
+#         print("------------------------------")
+#         if best_match:
+#             print(f"🕓 {best_match['dep_time']} → {best_match['arr_time']}")
+#             print(f"💷 Price: £{best_match['price']:.2f}")
+#         else:
+#             print("❌ No suitable ticket found")
+#         print(f"🔗 URL: {journey_url}")
+#
 # if __name__ == "__main__":
 #     main()
