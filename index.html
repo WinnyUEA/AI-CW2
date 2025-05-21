@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TrainBot Chat</title>
+    <link id="theme-style" rel="stylesheet" href="{{ url_for('static', filename='style-dark.css') }}">
+    <style>
+        .toggle-container {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        .toggle-container button {
+            padding: 6px 12px;
+            font-size: 14px;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .toggle-container button:hover {
+            opacity: 0.85;
+        }
+    </style>
+</head>
+<body>
+    <header>🚄 TrainBot</header>
+    <div class="toggle-container">
+    <button onclick="switchMode('customer')">Customer Mode</button>
+    <button onclick="switchMode('staff')">Staff Mode</button>
+
+    <select id="themeSelector" onchange="setTheme(this.value)">
+        <option value="dark" selected>Dark Theme</option>
+        <option value="light">Light Theme</option>
+    </select>
+    </div>
+    <div id="chatbox"></div>
+    <footer>
+        <input type="text" id="input" placeholder="Ask something..." onkeydown="if(event.key === 'Enter') sendMessage()">
+        <button id="sendBtn" onclick="sendMessage()">Send</button>
+    </footer>
+
+    <script>
+    let currentMode = 'customer';
+
+    function sendMessage() {
+        if (currentMode !== 'customer') return;
+
+        const input = document.getElementById("input");
+        const message = input.value.trim();
+        if (!message) return;
+
+        const chatbox = document.getElementById("chatbox");
+        chatbox.innerHTML += `<div class="user">${message}</div>`;
+        input.value = "";
+
+        fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: message })
+        })
+        .then(response => response.json())
+        .then(data => {
+            const replyHTML = data.reply
+                .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>')
+                .replace(/\n/g, "<br>");
+            chatbox.innerHTML += `<div class="bot">${replyHTML}</div>`;
+            chatbox.scrollTop = chatbox.scrollHeight;
+        });
+    }
+
+    function switchMode(mode) {
+        currentMode = mode;
+        const chatbox = document.getElementById("chatbox");
+        const input = document.getElementById("input");
+        const sendBtn = document.getElementById("sendBtn");
+
+        if (mode === 'staff') {
+            chatbox.innerHTML = "<div class='bot'>👷‍♂️ Staff chatbot coming soon...</div>";
+            input.disabled = true;
+            sendBtn.disabled = true;
+        } else {
+            chatbox.innerHTML = "";
+            input.disabled = false;
+            sendBtn.disabled = false;
+        }
+    }
+
+    function setTheme(theme) {
+        const themeLink = document.getElementById('theme-style');
+        if (theme === "light") {
+            themeLink.setAttribute('href', "{{ url_for('static', filename='style-light.css') }}");
+        } else {
+            themeLink.setAttribute('href', "{{ url_for('static', filename='style-dark.css') }}");
+        }
+    }
+    </script>
+
+</body>
+</html>
