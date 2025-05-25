@@ -97,39 +97,31 @@
     </style>
 </head>
 <body>
-    <header>🚄 TrainBot</header>
+<header>🚄 TrainBot</header>
 
-    <div class="top-bar">
-        <div class="left-controls">
-            <button onclick="switchMode('customer')">Customer Mode</button>
-            <button onclick="switchMode('staff')">Staff Mode</button>
-            <select id="themeSelector" onchange="setTheme(this.value)">
-                <option value="dark" selected>Dark Theme</option>
-                <option value="light">Light Theme</option>
-            </select>
-        </div>
-<div class="right-controls">
-    <button id="loginBtn" onclick="window.location.href='/login.html'">Login</button>
-    <button id="signupBtn" onclick="window.location.href='/signup.html'">Signup</button>
-    <button id="logoutBtn" style="display: none;">Logout</button>
-</div>
-
-</div>
+<div class="top-bar">
+    <div class="left-controls">
+        <select id="themeSelector" onchange="setTheme(this.value)">
+            <option value="dark" selected>Dark Theme</option>
+            <option value="light">Light Theme</option>
+        </select>
     </div>
+    <div class="right-controls">
+        <button id="loginBtn" onclick="window.location.href='/login.html'">Login</button>
+        <button id="signupBtn" onclick="window.location.href='/signup.html'">Signup</button>
+        <button id="logoutBtn" style="display: none;">Logout</button>
+    </div>
+</div>
 
-    <div id="chatbox"></div>
+<div id="chatbox"></div>
 
-    <footer>
-        <input type="text" id="input" placeholder="Ask something..." onkeydown="if(event.key === 'Enter') sendMessage()">
-        <button id="sendBtn" onclick="sendMessage()">Send</button>
-    </footer>
+<footer>
+    <input type="text" id="input" placeholder="Ask something..." onkeydown="if(event.key === 'Enter') sendMessage()">
+    <button id="sendBtn" onclick="sendMessage()">Send</button>
+</footer>
 
-  <script>
-let currentMode = 'customer';
-
+<script>
 function sendMessage() {
-    if (currentMode !== 'customer') return;
-
     const input = document.getElementById("input");
     const message = input.value.trim();
     if (!message) return;
@@ -151,23 +143,6 @@ function sendMessage() {
         chatbox.innerHTML += `<div class="bot">${replyHTML}</div>`;
         chatbox.scrollTop = chatbox.scrollHeight;
     });
-}
-
-function switchMode(mode) {
-    currentMode = mode;
-    const chatbox = document.getElementById("chatbox");
-    const input = document.getElementById("input");
-    const sendBtn = document.getElementById("sendBtn");
-
-    if (mode === 'staff') {
-        chatbox.innerHTML = "<div class='bot'>👷‍♂️ Staff chatbot coming soon...</div>";
-        input.disabled = true;
-        sendBtn.disabled = true;
-    } else {
-        chatbox.innerHTML = "";
-        input.disabled = false;
-        sendBtn.disabled = false;
-    }
 }
 
 function setTheme(theme) {
@@ -199,27 +174,19 @@ function loadChatHistory() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Theme
     const savedTheme = localStorage.getItem("theme") || "dark";
     setTheme(savedTheme);
     document.getElementById("themeSelector").value = savedTheme;
 
-    // Check login status
     fetch('/session-status')
         .then(res => res.json())
         .then(data => {
             const isLoggedIn = data.loggedIn;
 
-            // Buttons
-            const loginBtn = document.getElementById("loginBtn");
-            const signupBtn = document.getElementById("signupBtn");
-            const logoutBtn = document.getElementById("logoutBtn");
+            document.getElementById("loginBtn").style.display = isLoggedIn ? "none" : "inline-block";
+            document.getElementById("signupBtn").style.display = isLoggedIn ? "none" : "inline-block";
+            document.getElementById("logoutBtn").style.display = isLoggedIn ? "inline-block" : "none";
 
-            loginBtn.style.display = isLoggedIn ? "none" : "inline-block";
-            signupBtn.style.display = isLoggedIn ? "none" : "inline-block";
-            logoutBtn.style.display = isLoggedIn ? "inline-block" : "none";
-
-            // Enable or disable chat
             const input = document.getElementById("input");
             const sendBtn = document.getElementById("sendBtn");
             const chatbox = document.getElementById("chatbox");
@@ -231,11 +198,10 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
                 input.disabled = false;
                 sendBtn.disabled = false;
-                loadChatHistory(); // Load chat history only if logged in
+                loadChatHistory();
             }
 
-            // Logout
-            logoutBtn.addEventListener("click", () => {
+            document.getElementById("logoutBtn").addEventListener("click", () => {
                 fetch('/logout')
                     .then(() => window.location.reload());
             });
