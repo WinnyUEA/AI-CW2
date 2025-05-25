@@ -5,6 +5,7 @@
     <title>TrainBot Chat</title>
     <link id="theme-style" rel="stylesheet" href="/static/style-dark.css">
     <style>
+        /* Keep your current styles here */
         body {
             margin: 0;
             font-family: Arial, sans-serif;
@@ -94,6 +95,12 @@
         footer button:hover {
             background-color: #45a049;
         }
+
+        .welcome-box {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 18px;
+        }
     </style>
 </head>
 <body>
@@ -113,6 +120,8 @@
     </div>
 </div>
 
+<div class="welcome-box" id="welcomeBox">Checking login status...</div>
+
 <div id="chatbox"></div>
 
 <footer>
@@ -121,6 +130,8 @@
 </footer>
 
 <script>
+let currentUserType = 'user'; // default
+
 function sendMessage() {
     const input = document.getElementById("input");
     const message = input.value.trim();
@@ -130,7 +141,9 @@ function sendMessage() {
     chatbox.innerHTML += `<div class="user">${message}</div>`;
     input.value = "";
 
-    fetch("/chat", {
+    const endpoint = currentUserType === 'staff' ? "/staff-chat" : "/chat";
+
+    fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: message })
@@ -156,7 +169,7 @@ function loadChatHistory() {
         .then(res => res.json())
         .then(history => {
             const chatbox = document.getElementById("chatbox");
-            chatbox.innerHTML = ""; // Clear existing messages
+            chatbox.innerHTML = "";
 
             history.forEach(entry => {
                 const className = entry.sender_type === 'user' ? 'user' : 'bot';
@@ -179,33 +192,43 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("themeSelector").value = savedTheme;
 
     fetch('/session-status')
-        .then(res => res.json())
-        .then(data => {
-            const isLoggedIn = data.loggedIn;
+    .then(res => res.json())
+    .then(data => {
+        const isLoggedIn = data.loggedIn;
+        currentUserType = data.userType || 'user';
 
-            document.getElementById("loginBtn").style.display = isLoggedIn ? "none" : "inline-block";
-            document.getElementById("signupBtn").style.display = isLoggedIn ? "none" : "inline-block";
-            document.getElementById("logoutBtn").style.display = isLoggedIn ? "inline-block" : "none";
+        document.getElementById("loginBtn").style.display = isLoggedIn ? "none" : "inline-block";
+        document.getElementById("signupBtn").style.display = isLoggedIn ? "none" : "inline-block";
+        document.getElementById("logoutBtn").style.display = isLoggedIn ? "inline-block" : "none";
 
-            const input = document.getElementById("input");
-            const sendBtn = document.getElementById("sendBtn");
-            const chatbox = document.getElementById("chatbox");
+        const input = document.getElementById("input");
+        const sendBtn = document.getElementById("sendBtn");
+        const chatbox = document.getElementById("chatbox");
+        const welcomeBox = document.getElementById("welcomeBox");
 
-            if (!isLoggedIn) {
-                input.disabled = true;
-                sendBtn.disabled = true;
-                chatbox.innerHTML += `<div class="bot">🔒 Please <a href="/login.html">log in</a> to chat with the bot.</div>`;
+        if (!isLoggedIn) {
+            input.disabled = true;
+            sendBtn.disabled = true;
+            chatbox.innerHTML = `<div class="bot">🔒 You must <a href="/login.html">log in</a> to chat with TrainBot.</div>`;
+            welcomeBox.innerHTML = "Welcome to TrainBot. Please log in to use the chatbot.";
+        } else {
+            input.disabled = false;
+            sendBtn.disabled = false;
+
+            if (currentUserType === 'staff') {
+                chatbox.innerHTML = "<div class='bot'>👷‍♂️ Staff Chatbot ready. Ask operations-related questions.</div>";
+                welcomeBox.innerHTML = "Welcome back, staff member!";
             } else {
-                input.disabled = false;
-                sendBtn.disabled = false;
+                welcomeBox.innerHTML = "Welcome back! Ask TrainBot anything about your journey.";
                 loadChatHistory();
             }
+        }
 
-            document.getElementById("logoutBtn").addEventListener("click", () => {
-                fetch('/logout')
-                    .then(() => window.location.reload());
-            });
+        document.getElementById("logoutBtn").addEventListener("click", () => {
+            fetch('/logout')
+                .then(() => window.location.reload());
         });
+    });
 });
 </script>
 </body>
