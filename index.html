@@ -1,235 +1,163 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>TrainBot Chat</title>
-    <link id="theme-style" rel="stylesheet" href="/static/style-dark.css">
-    <style>
-        /* Keep your current styles here */
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background-color: #121212;
-            color: white;
-        }
-
-        header {
-            font-size: 24px;
-            font-weight: bold;
-            padding: 15px;
-            text-align: center;
-            background-color: #1f1f1f;
-        }
-
-        .top-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 20px;
-            background-color: #1f1f1f;
-        }
-
-        .left-controls, .right-controls {
-            display: flex;
-            gap: 10px;
-        }
-
-        .top-bar button, .top-bar select {
-            padding: 6px 12px;
-            font-size: 14px;
-            font-weight: bold;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            background-color: #333;
-            color: white;
-        }
-
-        .top-bar button:hover {
-            background-color: #444;
-        }
-
-        #chatbox {
-            padding: 20px;
-            max-height: 70vh;
-            overflow-y: auto;
-        }
-
-        .user {
-            text-align: right;
-            margin: 10px;
-            color: #4caf50;
-        }
-
-        .bot {
-            text-align: left;
-            margin: 10px;
-            color: #03a9f4;
-        }
-
-        footer {
-            display: flex;
-            padding: 10px 20px;
-            background-color: #1f1f1f;
-        }
-
-        footer input {
-            flex: 1;
-            padding: 10px;
-            font-size: 14px;
-            border-radius: 6px;
-            border: none;
-            margin-right: 10px;
-        }
-
-        footer button {
-            padding: 10px 16px;
-            font-size: 14px;
-            border-radius: 6px;
-            border: none;
-            cursor: pointer;
-            background-color: #4caf50;
-            color: white;
-        }
-
-        footer button:hover {
-            background-color: #45a049;
-        }
-
-        .welcome-box {
-            text-align: center;
-            margin-top: 20px;
-            font-size: 18px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>TrainBot Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link id="theme-style" rel="stylesheet" href="" />
+  <script>
+    const savedTheme = localStorage.getItem("theme") || "dark";
+    window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("theme-style").href = savedTheme === "dark"
+        ? "/static/style-dark.css"
+        : "/static/style-light.css";
+    });
+  </script>
 </head>
 <body>
-<header>🚄 TrainBot</header>
-
-<div class="top-bar">
-    <div class="left-controls">
-        <select id="themeSelector" onchange="setTheme(this.value)">
-            <option value="dark" selected>Dark Theme</option>
+  <div class="chat-wrapper">
+    <!-- Header -->
+    <header>
+      <div class="chat-header-container">
+        <h1>🚄 TrainBot</h1>
+        <div class="header-controls">
+          <select id="themeSelector" onchange="setTheme(this.value)">
             <option value="light">Light Theme</option>
-        </select>
+            <option value="dark">Dark Theme</option>
+          </select>
+          <button id="loginBtn" onclick="window.location.href='/login.html'">Login</button>
+          <button id="signupBtn" onclick="window.location.href='/signup.html'">Signup</button>
+          <button id="logoutBtn" style="display: none;">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Chat Area -->
+    <div class="main-chat-area">
+      <div class="welcome-box" id="welcomeBox">Checking login status...</div>
+      <div class="chatbox" id="chatbox"></div>
     </div>
-    <div class="right-controls">
-        <button id="loginBtn" onclick="window.location.href='/login.html'">Login</button>
-        <button id="signupBtn" onclick="window.location.href='/signup.html'">Signup</button>
-        <button id="logoutBtn" style="display: none;">Logout</button>
-    </div>
-</div>
 
-<div class="welcome-box" id="welcomeBox">Checking login status...</div>
+    <!-- Footer -->
+    <footer class="chat-footer">
+      <input type="text" id="input" placeholder="Ask something..." onkeydown="if(event.key === 'Enter') sendMessage()" />
+      <button id="sendBtn">Send</button>
+    </footer>
+  </div>
 
-<div id="chatbox"></div>
+  <!-- Toast Notification -->
+  <div id="toast" class="toast">🔒 Please log in to chat with TrainBot</div>
 
-<footer>
-    <input type="text" id="input" placeholder="Ask something..." onkeydown="if(event.key === 'Enter') sendMessage()">
-    <button id="sendBtn" onclick="sendMessage()">Send</button>
-</footer>
+  <script>
+    let currentUserType = 'user';
+    let isLoggedIn = false;
 
-<script>
-let currentUserType = 'user'; // default
+    function setTheme(theme) {
+      const themeLink = document.getElementById("theme-style");
+      themeLink.href = theme === "dark"
+        ? "/static/style-dark.css"
+        : "/static/style-light.css";
+      localStorage.setItem("theme", theme);
+      document.getElementById("themeSelector").value = theme;
+    }
 
-function sendMessage() {
-    const input = document.getElementById("input");
-    const message = input.value.trim();
-    if (!message) return;
+    function sendMessage() {
+      if (!isLoggedIn) {
+        showToast();
+        return;
+      }
 
-    const chatbox = document.getElementById("chatbox");
-    chatbox.innerHTML += `<div class="user">${message}</div>`;
-    input.value = "";
+      const input = document.getElementById("input");
+      const message = input.value.trim();
+      if (!message) return;
 
-    const endpoint = currentUserType === 'staff' ? "/staff-chat" : "/chat";
+      const chatbox = document.getElementById("chatbox");
+      chatbox.innerHTML += `<div class="chat-message user">${message}</div>`;
+      input.value = "";
 
-    fetch(endpoint, {
+      const endpoint = currentUserType === 'staff' ? "/staff-chat" : "/chat";
+
+      fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message })
-    })
-    .then(response => response.json())
-    .then(data => {
+        body: JSON.stringify({ message })
+      })
+      .then(res => res.json())
+      .then(data => {
         const replyHTML = data.reply
-            .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>')
-            .replace(/\n/g, "<br>");
-        chatbox.innerHTML += `<div class="bot">${replyHTML}</div>`;
+          .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>')
+          .replace(/\n/g, "<br>");
+        chatbox.innerHTML += `<div class="chat-message bot">${replyHTML}</div>`;
         chatbox.scrollTop = chatbox.scrollHeight;
-    });
-}
+      });
+    }
 
-function setTheme(theme) {
-    const themeLink = document.getElementById('theme-style');
-    themeLink.setAttribute('href', theme === "light" ? "/static/style-light.css" : "/static/style-dark.css");
-    localStorage.setItem("theme", theme);
-}
-
-function loadChatHistory() {
-    fetch('/chat-history')
+    function loadChatHistory() {
+      fetch('/chat-history')
         .then(res => res.json())
         .then(history => {
-            const chatbox = document.getElementById("chatbox");
-            chatbox.innerHTML = "";
-
-            history.forEach(entry => {
-                const className = entry.sender_type === 'user' ? 'user' : 'bot';
-                const messageHTML = entry.message
-                    .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>')
-                    .replace(/\n/g, "<br>");
-                chatbox.innerHTML += `<div class="${className}">${messageHTML}</div>`;
-            });
-
-            chatbox.scrollTop = chatbox.scrollHeight;
-        })
-        .catch(err => {
-            console.error('Failed to load chat history:', err);
+          const chatbox = document.getElementById("chatbox");
+          chatbox.innerHTML = "";
+          history.forEach(entry => {
+            const className = entry.sender_type === 'user' ? 'user' : 'bot';
+            const messageHTML = entry.message
+              .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>')
+              .replace(/\n/g, "<br>");
+            chatbox.innerHTML += `<div class="chat-message ${className}">${messageHTML}</div>`;
+          });
+          chatbox.scrollTop = chatbox.scrollHeight;
         });
-}
+    }
 
-document.addEventListener("DOMContentLoaded", () => {
-    const savedTheme = localStorage.getItem("theme") || "dark";
-    setTheme(savedTheme);
-    document.getElementById("themeSelector").value = savedTheme;
+    function showToast() {
+      const toast = document.getElementById("toast");
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3000);
+    }
 
-    fetch('/session-status')
-    .then(res => res.json())
-    .then(data => {
-        const isLoggedIn = data.loggedIn;
-        currentUserType = data.userType || 'user';
+    document.addEventListener("DOMContentLoaded", () => {
+      setTheme(localStorage.getItem("theme") || "dark");
 
-        document.getElementById("loginBtn").style.display = isLoggedIn ? "none" : "inline-block";
-        document.getElementById("signupBtn").style.display = isLoggedIn ? "none" : "inline-block";
-        document.getElementById("logoutBtn").style.display = isLoggedIn ? "inline-block" : "none";
+      fetch('/session-status')
+        .then(res => res.json())
+        .then(data => {
+          isLoggedIn = data.loggedIn;
+          currentUserType = data.userType || 'user';
 
-        const input = document.getElementById("input");
-        const sendBtn = document.getElementById("sendBtn");
-        const chatbox = document.getElementById("chatbox");
-        const welcomeBox = document.getElementById("welcomeBox");
+          const input = document.getElementById("input");
+          const sendBtn = document.getElementById("sendBtn");
+          const welcomeBox = document.getElementById("welcomeBox");
 
-        if (!isLoggedIn) {
-            input.disabled = true;
-            sendBtn.disabled = true;
-            chatbox.innerHTML = `<div class="bot">🔒 You must <a href="/login.html">log in</a> to chat with TrainBot.</div>`;
+          document.getElementById("loginBtn").style.display = isLoggedIn ? "none" : "inline-block";
+          document.getElementById("signupBtn").style.display = isLoggedIn ? "none" : "inline-block";
+          document.getElementById("logoutBtn").style.display = isLoggedIn ? "inline-block" : "none";
+
+          if (!isLoggedIn) {
+            input.addEventListener("click", showToast);
+            sendBtn.addEventListener("click", showToast);
             welcomeBox.innerHTML = "Welcome to TrainBot. Please log in to use the chatbot.";
-        } else {
+          } else {
             input.disabled = false;
             sendBtn.disabled = false;
 
-            if (currentUserType === 'staff') {
-                chatbox.innerHTML = "<div class='bot'>👷‍♂️ Staff Chatbot ready. Ask Emergency-related questions.</div>";
-                welcomeBox.innerHTML = "Welcome back, staff member!";
-            } else {
-                welcomeBox.innerHTML = "Welcome back! Ask TrainBot anything about your journey.";
-                loadChatHistory();
-            }
-        }
+            // Remove toast triggers
+            input.removeEventListener("click", showToast);
+            sendBtn.removeEventListener("click", showToast);
 
-        document.getElementById("logoutBtn").addEventListener("click", () => {
-            fetch('/logout')
-                .then(() => window.location.reload());
+            if (currentUserType === 'staff') {
+              document.getElementById("chatbox").innerHTML = "<div class='chat-message bot'>👷‍♂️ Staff Chatbot ready. Ask Emergency-related questions.</div>";
+              welcomeBox.innerHTML = "Welcome back, staff member!";
+            } else {
+              welcomeBox.innerHTML = "Welcome back! Ask TrainBot anything about your journey.";
+              loadChatHistory();
+            }
+
+            document.getElementById("logoutBtn").addEventListener("click", () => {
+              fetch('/logout').then(() => window.location.reload());
+            });
+          }
         });
     });
-});
-</script>
+  </script>
 </body>
 </html>
