@@ -2,8 +2,11 @@ const express = require('express');
 const session = require('express-session');
 const app = express();
 const bcrypt = require('bcrypt');
+const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+
+const kbPath = path.join(__dirname, 'data', 'knowledge_base.json');
 
 // PostgreSQL setup
 const pool = new Pool({
@@ -20,13 +23,14 @@ app.use(express.json());
 
 // Sessions
 app.use(session({
-  secret: 'your_secret_key', // use a strong random string in production
+  secret: 'your_secret_key',
   resave: false,
   saveUninitialized: false,
 }));
 
 // Static files
 app.use('/static', express.static(path.join(__dirname, 'static')));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
 app.get('/', (req, res) => {
@@ -79,42 +83,38 @@ app.post('/signup', async (req, res) => {
   }
 });
 
-// Login (✅ Correct handling: bcrypt for users, plain text for staff)
+// Login (bcrypt for users, plain text for staff)
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    // 1. Check USERS table (hashed passwords)
-    const userRes = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
-    if (userRes.rows.length > 0) {
-      const isMatch = await bcrypt.compare(password, userRes.rows[0].password);
-      if (isMatch) {
-        req.session.userId = userRes.rows[0].id;
-        req.session.userType = 'user'; // normal user
+    // Staff login (plain text)
+    const staffResult = await pool.query('SELECT * FROM staff WHERE username = $1 AND password = $2', [username, password]);
+    if (staffResult.rows.length > 0) {
+      req.session.userId = staffResult.rows[0].id;
+      req.session.userType = 'staff';
+      return res.json({ success: true, userType: 'staff' });
+    }
+
+    // User login (bcrypt)
+    const userResult = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (userResult.rows.length > 0) {
+      const match = await bcrypt.compare(password, userResult.rows[0].password);
+      if (match) {
+        req.session.userId = userResult.rows[0].id;
+        req.session.userType = 'user';
         return res.json({ success: true, userType: 'user' });
       }
     }
 
-    // 2. Check STAFF table (plain text passwords)
-    const staffRes = await pool.query("SELECT * FROM staff WHERE username = $1", [username]);
-    if (staffRes.rows.length > 0) {
-      const staff = staffRes.rows[0];
-      if (password === staff.password) {
-        req.session.userId = staff.id;
-        req.session.userType = 'staff'; // staff user
-        return res.json({ success: true, userType: 'staff' });
-      }
-    }
-
-    // 3. No match
-    res.status(401).json({ success: false, message: "Invalid username or password" });
+    res.json({ success: false, message: 'Invalid credentials' });
   } catch (err) {
-    console.error("Login error:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Login error' });
   }
 });
 
-// Chat message save route
+// User chat
 app.post('/chat', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -122,16 +122,13 @@ app.post('/chat', async (req, res) => {
   const userMessage = req.body.message;
 
   try {
-    // Save user message
     await pool.query(
       'INSERT INTO chat_history (user_id, message, sender_type, sent_at) VALUES ($1, $2, $3, NOW())',
       [userId, userMessage, 'user']
     );
 
-    // Simulated bot reply (replace with real logic later)
     const botReply = "This is a bot reply";
 
-    // Save bot reply
     await pool.query(
       'INSERT INTO chat_history (user_id, message, sender_type, sent_at) VALUES ($1, $2, $3, NOW())',
       [userId, botReply, 'bot']
@@ -144,18 +141,103 @@ app.post('/chat', async (req, res) => {
   }
 });
 
-app.post('/staff-chat', async (req, res) => {
-  const { message } = req.body;
-  const userId = req.session.userId;
+// Staff Chat
+app.post('/staff-chat', (req, res) => {
+  if (req.session.userType !== 'staff') {
+    return res.status(403).json({ reply: "❌ Unauthorized access. Staff only." });
+  }
 
-  const reply = `🚧 Staff Bot says: "${message}" understood. We're dispatching rail support.`;
+  const message = req.body.message.trim().toLowerCase();
 
-  await pool.query("INSERT INTO chat_history (user_id, message, sender_type) VALUES ($1, $2, 'user')", [userId, message]);
-  await pool.query("INSERT INTO chat_history (user_id, message, sender_type) VALUES ($1, $2, 'bot')", [userId, reply]);
+  if (message === 'reset') {
+    req.session.staffChatState = null;
+    return res.json({ reply: "🔄 Conversation reset. Please tell me the location of the blockage." });
+  }
 
-  res.json({ reply });
+  let kb;
+  try {
+    const kbRaw = fs.readFileSync(kbPath, 'utf-8');
+    kb = JSON.parse(kbRaw);
+  } catch (err) {
+    console.error('Knowledge base load error:', err);
+    return res.status(500).json({ reply: "❗ Error loading knowledge base." });
+  }
+
+  if (!req.session.staffChatState) {
+    req.session.staffChatState = { step: 'location' };
+  }
+
+  const chatState = req.session.staffChatState;
+
+  const Fuse = require('fuse.js');
+  const fuse = new Fuse(kb, {
+    keys: ['location'],
+    threshold: 0.3,
+    ignoreLocation: true,
+    includeScore: true
+  });
+
+  // Step 1: Location
+  if (chatState.step === 'location') {
+    const results = fuse.search(message);
+
+    if (results.length === 0) {
+      return res.json({ reply: "❗ I couldn't match that location.\n🗺️ Please enter a valid known location (e.g. 'Stratford - Maryland').\nOr type `reset` to start over." });
+    }
+
+    chatState.location = results[0].item.location;
+    chatState.step = 'blockage_type';
+    return res.json({ reply: `📍 Location noted: **${chatState.location}**\n\n❓ Is the blockage **partial** or **full**?` });
+  }
+
+  // Step 2: Blockage Type
+  if (chatState.step === 'blockage_type') {
+    const type = message.includes('partial') ? 'partial'
+                : message.includes('full') ? 'full'
+                : null;
+
+    if (!type) {
+      return res.json({ reply: "❗ Please reply with either **partial** or **full** for the blockage type.\nOr type `reset` to restart." });
+    }
+
+    chatState.blockage_type = type;
+
+    const match = kb.find(entry =>
+      entry.location.toLowerCase() === chatState.location.toLowerCase() &&
+      entry.blockage_type.toLowerCase() === type
+    );
+
+    req.session.staffChatState = null;
+
+    if (match) {
+      return res.json({
+        reply:
+          `✅ Thank you. Here is the contingency advice:\n\n` +
+          `📍 **Location**: ${match.location}\n` +
+          `🛑 **Blockage Type**: ${match.blockage_type}\n` +
+          `📘 **Advice**: ${match.advice}\n` +
+          `🚍 **Alternative Transport**: ${match.alt_transport || 'N/A'}\n\n` +
+          `📝 **Passenger Notes**: ${match.passenger_notes || 'N/A'}\n` +
+          `👷‍♂️ **Staff Notes**: ${match.staff_notes || 'N/A'}`
+      });
+    } else {
+      return res.json({ reply: "❗ I couldn't find a match for that location and blockage type.\n🔁 Please type `reset` to try again." });
+    }
+  }
+
+  // Catch-all fallback: guide user based on current step
+  if (chatState.step === 'location') {
+    return res.json({ reply: "❗ Please enter a valid location to continue.\n🗺️ For example: 'Stratford - Maryland'.\nOr type `reset` to start over." });
+  }
+
+  if (chatState.step === 'blockage_type') {
+    return res.json({ reply: "❗ Please enter **partial** or **full** as the blockage type.\nOr type `reset` to restart the chat." });
+  }
+
+  return res.json({ reply: "❓ Something went wrong. Please type `reset` to start over." });
 });
 
+// Chat history
 app.get('/chat-history', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -171,13 +253,20 @@ app.get('/chat-history', async (req, res) => {
   }
 });
 
-// Check session login status
+// Session status
 app.get('/session-status', (req, res) => {
-  if (req.session.userId) {
-    res.json({ loggedIn: true, userType: req.session.userType });
-  } else {
-    res.json({ loggedIn: false });
+  res.json({
+    loggedIn: !!req.session.userId,
+    userType: req.session.userType || null
+  });
+});
+
+// Staff chatbot page
+app.get('/staff-chatbot', (req, res) => {
+  if (req.session.userType !== 'staff') {
+    return res.redirect('/login');
   }
+  res.sendFile(path.join(__dirname, 'public', 'staff-chat.html'));
 });
 
 // Start server
