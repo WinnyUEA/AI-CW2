@@ -1,3 +1,4 @@
+#Libaries for the web scraper
 from urllib.parse import urlencode
 from datetime import datetime
 from selenium import webdriver
@@ -7,12 +8,9 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 import re
 
+#Builds the URL itself with arrival, depature and all of the othe input but for single joreny only
 def build_thameslink_url(origin_crs, dest_crs, depart_date, depart_time, depart_type,
                          adults="1", children="0", time_preference="at"):
-    """
-    Build Thameslink URL with time preference.
-    time_preference: 'at' (exact depart), 'by' (arrive by), 'after' (depart after).
-    """
     # Choose prefix
     ts_prefix = "Arrive_at" if time_preference == "by" else "Depart_at"
     timestamp = f"{ts_prefix}_{depart_date}T{depart_time}"
@@ -32,6 +30,7 @@ def build_thameslink_url(origin_crs, dest_crs, depart_date, depart_time, depart_
     hour, minute = depart_time.split(":")
     return full_url, int(hour), int(minute)
 
+#Builds the urls for return joreny with both outbound and return included
 def build_thameslink_return_url(origin_crs, dest_crs, depart_date, depart_time, return_date, return_time,
                                 depart_type, return_type, adults="1", children="0"):
     if depart_type == "arriving":
@@ -63,6 +62,7 @@ def build_thameslink_return_url(origin_crs, dest_crs, depart_date, depart_time, 
 
     return full_url, int(dep_hour), int(dep_minute), int(ret_hour), int(ret_minute)
 
+#Cookies handeled for the website itself
 def accept_cookies_if_present(driver):
     try:
         wait = WebDriverWait(driver, 10)
@@ -74,6 +74,7 @@ def accept_cookies_if_present(driver):
     except:
         print("✅ No cookie popup or already handled.")
 
+#The fuction finds the cheapest one way ticket for one way jorney
 def extract_cheapest_single_ticket(driver, target_hour, target_minute, match_on_arrival=False):
     wait = WebDriverWait(driver, 15)
     time.sleep(10)
@@ -88,14 +89,16 @@ def extract_cheapest_single_ticket(driver, target_hour, target_minute, match_on_
 
     for tile in fare_tiles:
         try:
+            #Skips the title itself
             if "fare-list-v2__tile--unavailable" in tile.get_attribute("class"):
                 continue
 
+            #This extract the screen which has all the ticket infos
             sr_elem = tile.find_element(By.CSS_SELECTOR, ".action .sr-only")
             sr_text = sr_elem.text.strip()
             if not sr_text:
                 continue
-
+            #Extracts the departure and arrival times
             match = re.search(r"valid on the (\d{2}:\d{2}) from .*? at (\d{2}:\d{2})", sr_text)
             if not match:
                 continue
@@ -103,6 +106,7 @@ def extract_cheapest_single_ticket(driver, target_hour, target_minute, match_on_
             dep_time_str = match.group(1)
             arr_time_str = match.group(2)
 
+            #This see what tiem to comapre
             compare_time = arr_time_str if match_on_arrival else dep_time_str
             compare_dt = datetime.strptime(compare_time, "%H:%M")
             compare_minutes = compare_dt.hour * 60 + compare_dt.minute
@@ -111,6 +115,7 @@ def extract_cheapest_single_ticket(driver, target_hour, target_minute, match_on_
             if abs(compare_minutes - user_minutes) > max_diff:
                 continue
 
+            #Extact the chapest price
             price_match = re.search(r"£(\d+\.\d{2})", sr_text)
             if not price_match:
                 continue
@@ -127,6 +132,7 @@ def extract_cheapest_single_ticket(driver, target_hour, target_minute, match_on_
             print(f"⚠️ Error processing tile: {e}")
             continue
 
+    #Clixks the cheapest ticket in the whole website it found
     if best_tile:
         try:
             driver.execute_script("arguments[0].click();", best_tile)
@@ -137,7 +143,7 @@ def extract_cheapest_single_ticket(driver, target_hour, target_minute, match_on_
     else:
         return None, None, None
 
-
+#This fucntion scraper the chapest ticket of return joreny, return only
 def extract_cheapest_return_journey(driver, target_hour, target_minute, match_on_arrival=False):
     wait = WebDriverWait(driver, 15)
     time.sleep(10)
@@ -149,6 +155,7 @@ def extract_cheapest_return_journey(driver, target_hour, target_minute, match_on
     user_minutes = target_hour * 60 + target_minute
 
     try:
+        #See where the right colum is since in the website the return ticket is inthe right column
         return_column = driver.find_element(By.CSS_SELECTOR,
             "div.service-grid-v2__content__row__column--right")
         fare_tiles = return_column.find_elements(By.CSS_SELECTOR, "div.fare-list-v2__tile")
@@ -156,9 +163,11 @@ def extract_cheapest_return_journey(driver, target_hour, target_minute, match_on
         print("❌ Could not locate return fare tiles:", e)
         return None, None, None
 
+    #Goes throught all the retun ticket price and date
     for tile in fare_tiles:
         try:
             sr_text = tile.find_element(By.CSS_SELECTOR, ".action .sr-only").text.strip()
+            #Uses regex to extact what time it is in the html
             time_match = re.search(r"valid on the (\d{2}:\d{2}) from .*? at (\d{2}:\d{2})", sr_text)
             if not time_match:
                 continue
@@ -166,14 +175,17 @@ def extract_cheapest_return_journey(driver, target_hour, target_minute, match_on
             dep_time_str = time_match.group(1)
             arr_time_str = time_match.group(2)
 
+            #Here it which time to use with the user input compared
             compare_time = arr_time_str if match_on_arrival else dep_time_str
             compare_dt = datetime.strptime(compare_time, "%H:%M")
             compare_minutes = compare_dt.hour * 60 + compare_dt.minute
 
+            #time difference
             max_diff = 60 if match_on_arrival else 30
             if abs(compare_minutes - user_minutes) > max_diff:
                 continue
 
+            #Price extract
             price_match = re.search(r"£(\d+\.\d{2})", sr_text)
             if not price_match:
                 continue
@@ -189,7 +201,7 @@ def extract_cheapest_return_journey(driver, target_hour, target_minute, match_on
         except Exception as e:
             print(f"⚠️ Error in return tile: {e}")
             continue
-
+    #Clicks on the best cheap ticket
     if best_tile:
         try:
             driver.execute_script("arguments[0].click();", best_tile)
@@ -201,18 +213,19 @@ def extract_cheapest_return_journey(driver, target_hour, target_minute, match_on
     print("❌ No suitable return journey found.")
     return None, None, None
 
-
+#This functsion extracts the cheapets ticket of outbound in the two way joreny
 def click_cheapest_outbound_tile(driver, target_hour, target_minute, match_on_arrival=False):
     time.sleep(10)
+    #See wher ethe left column is in html since outbound is in the left side
     left_column = driver.find_element(By.CSS_SELECTOR,
         "div.service-grid-v2__content__row__column--left")
     fare_tiles = left_column.find_elements(By.CSS_SELECTOR, "div.fare-list-v2__tile")
-
+    #Variable for to track price and time
     best_tile = None
     best_price = float("inf")
     best_dep_time = best_arr_time = None
     user_minutes = target_hour * 60 + target_minute
-
+    #This loops throught all the tcikste to fin the on the user input match
     for tile in fare_tiles:
         try:
             sr_text = tile.find_element(By.CSS_SELECTOR, ".action .sr-only").text.strip()
@@ -221,11 +234,13 @@ def click_cheapest_outbound_tile(driver, target_hour, target_minute, match_on_ar
                 continue
 
             dep_time_str, arr_time_str = match.groups()
+            #See if it is arrivel time or for departure time
             compare_time = arr_time_str if match_on_arrival else dep_time_str
             compare_minutes = datetime.strptime(compare_time, "%H:%M").hour * 60 + datetime.strptime(compare_time, "%H:%M").minute
+            #Time difference
             if abs(compare_minutes - user_minutes) > (60 if match_on_arrival else 30):
                 continue
-
+            #Price Extract
             price_match = re.search(r"£(\d+\.\d{2})", sr_text)
             if not price_match:
                 continue
@@ -240,7 +255,7 @@ def click_cheapest_outbound_tile(driver, target_hour, target_minute, match_on_ar
         except Exception as e:
             print(f"⚠️ Outbound error: {e}")
             continue
-
+    #Clicks on the one that is the best tcikets
     if best_tile:
         try:
             driver.execute_script("arguments[0].click();", best_tile)
@@ -252,6 +267,7 @@ def click_cheapest_outbound_tile(driver, target_hour, target_minute, match_on_ar
         print("❌ No suitable outbound ticket found.")
     return None, None, None
 
+#This functions runs the webscraper itself
 def run_thames_scraper(
     origin, destination,
     depart_date, depart_time, depart_type,
@@ -259,7 +275,7 @@ def run_thames_scraper(
     is_return=False, return_date=None, return_time=None, return_type="departing",
     adults="1", children="0"
 ):
-    # Normalize dates to YYYY-MM-DD
+    #Mkaes the adate into the YYYY-MM-DD format
     try:
         depart_date = datetime.strptime(depart_date, "%d/%m/%Y").strftime("%Y-%m-%d")
         if return_date:
@@ -267,6 +283,7 @@ def run_thames_scraper(
     except ValueError:
         pass
 
+    #Build the url for the searchh of webscraper
     if is_return:
         url, dep_hour, dep_minute, ret_hour, ret_minute = build_thameslink_return_url(
             origin, destination,
@@ -275,6 +292,7 @@ def run_thames_scraper(
             depart_type, return_type,
             adults, children
         )
+    #Builds the one way webscraper
     else:
         url, dep_hour, dep_minute = build_thameslink_url(
             origin, destination,
@@ -283,14 +301,14 @@ def run_thames_scraper(
             adults, children,
             time_preference=time_preference
         )
-
+    #Lauch
     driver = webdriver.Chrome()
     driver.get(url)
     accept_cookies_if_present(driver)
 
     out_dep = out_arr = return_dep = return_arr = None
     total_price = None
-
+    #Runs the two way joreny with return and outbouund
     if is_return:
         out_dep, out_arr, _ = extract_cheapest_single_ticket(
             driver, dep_hour, dep_minute,
@@ -311,12 +329,14 @@ def run_thames_scraper(
             total_price = float(total_elem.text.strip().replace("£", ""))
         except:
             total_price = None
+    #For the one way joreny handel
     else:
         out_dep, out_arr, total_price = extract_cheapest_single_ticket(
             driver, dep_hour, dep_minute,
             match_on_arrival=(depart_type == "arriving")
         )
 
+    #Retruns the data itself
     driver.quit()
     return {
         "origin": origin,
@@ -328,88 +348,3 @@ def run_thames_scraper(
         "total_price": total_price,
         "url": url
     }
-
-# def main():
-#     print("=== Thameslink Cheapest Ticket Finder (with 'Arrive By' + Return Click Total) ===")
-#
-#     origin = input("Enter Origin CRS (e.g., NRW): ").strip().upper()
-#     dest = input("Enter Destination CRS (e.g., PAD): ").strip().upper()
-#     date_str = input("Enter Travel Date (DD/MM/YYYY): ").strip()
-#     time_str = input("Enter Departure Time (HH:MM, 24-hour): ").strip()
-#     time_type = input("Is this time for 'depart by' or 'arrive by'? ").strip().lower()
-#     adults = input("Number of Adults (default 1): ").strip() or "1"
-#     children = input("Number of Children (default 0): ").strip() or "0"
-#
-#     is_return = input("Is this a return journey? (yes/no): ").strip().lower()
-#     return_date_str = None
-#     return_time_str = None
-#     return_time_type = "departing"
-#
-#     depart_type = "arriving" if time_type == "arrive by" else "departing"
-#
-#     if is_return == "yes":
-#         return_date_str = input("Enter Return Date (DD/MM/YYYY): ").strip()
-#         return_time_str = input("Enter Return Time (HH:MM, 24-hour): ").strip()
-#         return_time_type_input = input("Is return time for 'depart by' or 'arrive by'? ").strip().lower()
-#         return_time_type = "arriving" if return_time_type_input == "arrive by" else "departing"
-#
-#         depart_date = datetime.strptime(date_str, "%d/%m/%Y").strftime("%Y-%m-%d")
-#         return_date = datetime.strptime(return_date_str, "%d/%m/%Y").strftime("%Y-%m-%d")
-#
-#         url, hour, minute, return_hour, return_minute = build_thameslink_return_url(
-#             origin, dest, depart_date, time_str, return_date, return_time_str,
-#             depart_type, return_time_type, adults, children
-#         )
-#     else:
-#         formatted_date = datetime.strptime(date_str, "%d/%m/%Y").strftime("%Y-%m-%d")
-#
-#         url, hour, minute = build_thameslink_url(
-#             origin, dest, formatted_date, time_str, depart_type, adults, children
-#         )
-#
-#     print(f"🌐 Opening browser to: {url}")
-#     driver = webdriver.Chrome()
-#     driver.get(url)
-#
-#     accept_cookies_if_present(driver)
-#
-#     if is_return == "yes":
-#         print("🔍 Looking for outbound ticket...")
-#         out_dep, out_arr, _ = extract_cheapest_single_ticket(driver, hour, minute, match_on_arrival=(depart_type == "arriving"))
-#
-#         print("🔄 Looking for return ticket...")
-#         ret_dep, ret_arr, _ = extract_cheapest_return_journey(driver, return_hour, return_minute, match_on_arrival=(return_time_type == "arriving"))
-#
-#         # Wait for basket total
-#         time.sleep(5)
-#         try:
-#             total_elem = WebDriverWait(driver, 10).until(
-#                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.grid-basket-summary-v2__ticket__body__total .sr-text"))
-#             )
-#             total_text = total_elem.text.strip()
-#         except:
-#             total_text = "N/A"
-#
-#         print("\n🧾 Round Trip Summary:")
-#         print("----------------------------")
-#         print(f"🚆 Outbound : {out_dep} → {out_arr}" if out_dep else "❌ Outbound not found")
-#         print(f"🔁 Return   : {ret_dep} → {ret_arr}" if ret_dep else "❌ Return not found")
-#         print(f"💷 Total from Site: {total_text}")
-#         print(f"🔗 URL      : {url}")
-#         driver.quit()
-#
-#     else:
-#         out_dep, out_arr, out_price = extract_cheapest_single_ticket(driver, hour, minute, match_on_arrival=(depart_type == "arriving"))
-#         driver.quit()
-#
-#         if out_dep:
-#             print("\n🧾 Cheapest Ticket Found:")
-#             print("----------------------------")
-#             print(f"🕓 Journey : {out_dep} → {out_arr}")
-#             print(f"💷 Price   : £{out_price:.2f}")
-#             print(f"🔗 URL     : {url}")
-#         else:
-#             print("\n❌ No tickets found within ±60 minutes." if depart_type == "arriving" else "\n❌ No tickets found within ±30 minutes.")
-#
-# if __name__ == "__main__":
-#     main()
