@@ -10,10 +10,11 @@ CREATE TABLE users (
 -- Stores conversation messages between user and chatbot
 CREATE TABLE chat_history (
     id SERIAL PRIMARY KEY,
-    user_id INT REFERENCES users(id),
+    user_id INT NOT NULL,
     message TEXT NOT NULL,
     sender_type VARCHAR(10) CHECK (sender_type IN ('user', 'bot')),
-    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    account_type VARCHAR(10) CHECK (account_type IN ('user', 'staff')) NOT NULL
 );
 
 
@@ -79,4 +80,8 @@ CREATE TABLE staff (
     password TEXT NOT NULL,
     full_name TEXT
 );
-
+INSERT INTO staff (username, password, full_name)
+VALUES 
+('aldrich', 'aldrich123', 'Aldrich Monteiro'),
+('prasid', 'prasid123', 'Prasid Shreshta'),
+('Winny', 'yeyin123', 'Ye Yin');
