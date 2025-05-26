@@ -1,16 +1,14 @@
+<!-- templates/signup.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign Up</title>
-  <script>
-    const savedTheme = localStorage.getItem("theme") || "light";
-    document.write(`<link id="theme-style" rel="stylesheet" href="/static/style-${savedTheme}.css">`);
-  </script>
+  <link rel="stylesheet" href="/static/signup.css" />
 </head>
-<body class="auth">
-  <div class="auth-card">
+<body>
+  <div class="container">
     <h2>Create an Account</h2>
     <form action="/signup" method="POST">
       <input type="text" name="username" required placeholder="Username" />
