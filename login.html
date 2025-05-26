@@ -1,47 +1,49 @@
+<!-- templates/login.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Login</title>
-  <script>
-    const savedTheme = localStorage.getItem("theme") || "light";
-    document.write(`<link id="theme-style" rel="stylesheet" href="/static/style-${savedTheme}.css">`);
-  </script>
+  <link rel="stylesheet" href="/static/login.css" />
 </head>
-<body class="auth">
-  <div class="auth-card">
+<body>
+  <div class="container">
     <h2>Login</h2>
-    <form id="login-form">
+    
+    <!-- ✅ Added id="login-form" -->
+    <form id="login-form" action="/login" method="POST">
       <input type="text" name="username" required placeholder="Username" />
       <input type="password" name="password" required placeholder="Password" />
       <button type="submit">Login</button>
     </form>
+
+    <script>
+      document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const form = e.target;
+        const response = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: form.username.value,
+            password: form.password.value
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          window.location.href = '/'; // ✅ Redirect to index.html
+        } else {
+          alert('Login failed: ' + data.message);
+        }
+      });
+    </script>
+
     <p>Don’t have an account? <a href="/signup.html">Sign up here</a></p>
     <a class="back" href="/">← Back to Home</a>
   </div>
-
-  <script>
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const form = e.target;
-
-      const response = await fetch('/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: form.username.value,
-          password: form.password.value
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        window.location.href = '/';
-      } else {
-        alert('Login failed: ' + data.message);
-      }
-    });
-  </script>
 </body>
 </html>
