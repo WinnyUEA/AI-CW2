@@ -4,38 +4,37 @@ from fuzzywuzzy import fuzz
 import nltk
 import spacy
 
-#The NLTK is downloaded 
+# Download necessary NLTK resources
 nltk.download('punkt')
 nltk.download('wordnet')
 nltk.download('omw-1.4')
 
-#Installed for word normalizatt
+# Initialize stemmer
 stemmer = nltk.PorterStemmer()
 
-#Load spacy and stuff
+# Load spaCy
 try:
     nlp = spacy.load("en_core_web_sm")
-    print("spaCy NLP loaded.")
+    print("✅ spaCy NLP loaded.")
 except:
     nlp = None
-    print("spaCy model not found. NLP features limited.")
+    print("⚠️ spaCy model not found. NLP features limited.")
 
-#Chatbot class difined
 class StaffChatbot:
     def __init__(self):
-        #The knowledge based that is in the file is loaded
         try:
             with open('knowledge_base.json', 'r') as f:
                 self.knowledge_base = json.load(f)
-            print("Knowledge base loaded with", len(self.knowledge_base), "entries.")
+            print("📘 Knowledge base loaded with", len(self.knowledge_base), "entries.")
         except Exception as e:
-            print("Failed to load knowledge base:", e)
+            print("❌ Failed to load knowledge base:", e)
             self.knowledge_base = []
 
         self.awaiting_location = False
+        self.awaiting_blockage_type = False
+        self.last_entry_candidates = []
         self.last_intent = None
-    
-    #This matches the location from the user using teh fuzzy
+
     def fuzzy_match_location(self, user_input):
         best_score = 0
         best_match = None
@@ -45,103 +44,118 @@ class StaffChatbot:
                 best_score = score
                 best_match = entry['location'].lower()
         return best_match
-    #Location extartion from the user
+
     def extract_location(self, user_input):
         user_input_lower = user_input.lower()
-        #Her it matches to dircet to code name
         for entry in self.knowledge_base:
             if entry['code'].lower() in user_input_lower:
-                return entry
-        #Here it matches through locations 
+                return [entry]
+        matched = []
         for entry in self.knowledge_base:
             if entry['location'].lower() in user_input_lower:
-                return entry
-        #Npl based loaction excation is doen here 
+                matched.append(entry)
+        if matched:
+            return matched
         if nlp:
             doc = nlp(user_input)
-
             entities = [ent.text.lower() for ent in doc.ents if ent.label_ in ['GPE', 'LOC']]
-
             noun_chunks = [chunk.text.lower() for chunk in doc.noun_chunks]
             for entry in self.knowledge_base:
                 if any(loc in entry['location'].lower() for loc in entities + noun_chunks):
-                    return entry
-        #Fuzzy match here
+                    matched.append(entry)
+            if matched:
+                return matched
         fuzzy_loc = self.fuzzy_match_location(user_input)
         if fuzzy_loc:
-            for entry in self.knowledge_base:
-                if entry['location'].lower() == fuzzy_loc:
-                    return entry
+            matched = [entry for entry in self.knowledge_base if entry['location'].lower() == fuzzy_loc]
+            if matched:
+                return matched
+        return []
 
-        return None
-    #User intetent is identitfy using nlp
     def detect_intent(self, text: str) -> str:
         text_lower = text.lower()
+        end_keywords = ['thank you', 'thanks', 'bye', 'no more help', 'that’s all', 'i’m done', 'exit']
+        if any(k in text_lower for k in end_keywords):
+            return "end"
+
         blockage_keywords = {
-            'block', 'blockage', 'issue', 'problem', 'disruption', 'delay', 'cancel', 'cancelled', 'engineering', 'incident'
+            'block', 'blockage', 'issue', 'problem', 'disruption',
+            'delay', 'cancel', 'cancelled', 'engineering', 'incident'
         }
-        #Tokanize
+
         tokens = re.findall(r'\b\w+\b', text_lower)
-        #Steaming
         stemmed_tokens = {stemmer.stem(word) for word in tokens}
-        #Laminitizations
-        if nlp:
-            doc = nlp(text_lower)
-            lemmatized_tokens = {token.lemma_ for token in doc}
-        else:
-            lemmatized_tokens = set()
-
-
+        lemmatized_tokens = {token.lemma_ for token in nlp(text_lower)} if nlp else set()
         all_normalized = stemmed_tokens.union(lemmatized_tokens)
-
 
         for kw in blockage_keywords:
             if stemmer.stem(kw) in all_normalized or kw in all_normalized:
                 return "blockage_info"
-
         return "unknown"
-    #Makes reponse formknowledge base 
-    def answer_kb_query(self, user_input):
-        entry = self.extract_location(user_input)
-        if not entry:
-            return "Sorry, I couldn’t find disruption information for that query. Please specify the location."
 
-        response = f"Disruption at **{entry['location']}** ({entry['code']}):\n"
-        response += f"Advice: {entry['advice']}\n"
-        response += f"Staff Notes: {entry['staff_notes']}\n"
-        response += "Alternative Transport: " + ", ".join(entry['alt_transport']) + "\n"
-        response += f"Passenger Info: {entry['passenger_notes']}"
+    def answer_kb_query(self, entry):
+        response = f"🚧 Disruption at **{entry['location']}** ({entry['code']}):\n"
+        response += f"🔎 Blockage Type: {entry['blockage'].capitalize()}\n"
+        response += f"🛠️ Advice: {entry['advice']}\n"
+        response += f"👷 Staff Notes: {entry['staff_notes']}\n"
+        response += "🚍 Alternative Transport: " + ", ".join(entry['alt_transport']) + "\n"
+        response += f"🧳 Passenger Info: {entry['passenger_notes']}"
         return response
-    #This function is to process the query
+
     def generate_response(self, user_input):
+        if self.awaiting_blockage_type:
+            bt = user_input.strip().lower()
+            if bt in ["partial", "full"]:
+                for entry in self.last_entry_candidates:
+                    if entry["blockage"].lower() == bt:
+                        self.awaiting_blockage_type = False
+                        return self.answer_kb_query(entry)
+                return f"No {bt} blockage found for the specified location."
+            else:
+                return "Please specify if the blockage is **partial** or **full**."
+
         if self.awaiting_location:
             self.awaiting_location = False
-            return self.answer_kb_query(user_input)
+            entries = self.extract_location(user_input)
+            if not entries:
+                return "❌ Sorry, I couldn’t find disruption information for that location."
+            elif len(entries) == 1:
+                return self.answer_kb_query(entries[0])
+            else:
+                self.awaiting_blockage_type = True
+                self.last_entry_candidates = entries
+                return "ℹ️ There are multiple disruption types. Is the blockage **partial** or **full**?"
 
         intent = self.detect_intent(user_input)
-        if intent == "blockage_info":
-            entry = self.extract_location(user_input)
-            if entry:
-                return self.answer_kb_query(user_input)
-            else:
-                self.awaiting_location = True
-                return "Where is the disruption occurring?"
+        if intent == "end":
+            return "You're welcome! If you need further assistance, feel free to ask. Goodbye! 👋"
 
-        return "I’m here to help with train service disruptions. You can tell me about any blockage or issue."
-    #Run the bot
+        if intent == "blockage_info":
+            entries = self.extract_location(user_input)
+            if not entries:
+                self.awaiting_location = True
+                return "📍 Where is the disruption occurring?"
+            elif len(entries) == 1:
+                return self.answer_kb_query(entries[0])
+            else:
+                self.awaiting_blockage_type = True
+                self.last_entry_candidates = entries
+                return "ℹ️ There are multiple disruption types. Is the blockage **partial** or **full**?"
+
+        return "🤖 I’m here to help with train service disruptions. You can tell me about any blockage or issue."
+
+# Run in terminal mode
 if __name__ == "__main__":
-    print("Staff Chatbot initialized (Conversational Mode). Type 'exit' to quit.")
+    print("🛠️ Staff Chatbot Initialized. Type 'exit' to quit.")
     bot = StaffChatbot()
     while True:
         try:
             msg = input("Staff: ").strip()
             if msg.lower() in ['exit', 'quit']:
-                print("Goodbye!")
+                print("👋 Goodbye!")
                 break
             reply = bot.generate_response(msg)
             print("Bot:", reply)
         except KeyboardInterrupt:
-            print("Exiting...")
+            print("\n👋 Exiting...")
             break
-
-
