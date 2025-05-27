@@ -1,0 +1,171 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from datetime import datetime
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
+from sklearn.linear_model import LinearRegression
+from xgboost import XGBRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import joblib
+import os
+
+class TrainDelayChatbot:
+    def __init__(self):
+        self.delay_data = {}
+        self.rf = None
+        self.gbm = None
+        self.lr = None
+        self.xgb = None
+        self.extra = None
+        self.load_delay_data()
+
+    def parse_time(self, t):
+        try:
+            return datetime.strptime(str(t).strip(), "%H:%M").time()
+        except:
+            return None
+
+    def compute_delay(self, planned, actual):
+        try:
+            if pd.isnull(planned) or pd.isnull(actual):
+                return None
+            delta = datetime.combine(datetime.today(), actual) - datetime.combine(datetime.today(), planned)
+            return round(delta.total_seconds() / 60.0)
+        except:
+            return None
+
+    def load_station_codes(self, path='stations.csv'):
+        try:
+            stations_raw = pd.read_csv(path)
+            stations = stations_raw.reset_index().rename(columns={'index': 'station_name', 'tiploc': 'location'})
+            stations['location'] = stations['location'].str.strip()
+            return stations[['location', 'station_name']]
+        except:
+            print(" Warning: stations.csv could not be loaded.")
+            return pd.DataFrame()
+
+    def load_delay_data(self):
+        self.delay_data = {'Norwich-LST': [], 'LST-Norwich': []}
+        station_map = self.load_station_codes()
+
+        for year in [2022, 2023, 2024]:
+            for direction, fname, label in [
+                ('Norwich_to_London', f'{year}_service_details_Norwich_to_London.csv', 'Norwich-LST'),
+                ('London_to_Norwich', f'{year}_service_details_London_to_Norwich.csv', 'LST-Norwich')
+            ]:
+                try:
+                    df = pd.read_csv(fname)
+                    df['route'] = label
+                    df['direction'] = direction
+                    self.delay_data[label].append(df)
+                except FileNotFoundError:
+                    print(f" {fname} not found")
+
+        for route in self.delay_data:
+            if self.delay_data[route]:
+                df = pd.concat(self.delay_data[route], ignore_index=True)
+
+                rename_map = {
+                    'Norwich-LST': {
+                        'planned_arrival_time': 'planned_arrival',
+                        'planned_departure_time': 'planned_departure',
+                        'actual_arrival_time': 'actual_arrival',
+                        'actual_departure_time': 'actual_departure'
+                    },
+                    'LST-Norwich': {
+                        'gbtt_pta': 'planned_arrival',
+                        'gbtt_ptd': 'planned_departure',
+                        'actual_ta': 'actual_arrival',
+                        'actual_td': 'actual_departure'
+                    }
+                }
+
+                df = df.rename(columns=rename_map[route])
+
+                for col in ['planned_arrival', 'planned_departure', 'actual_arrival', 'actual_departure']:
+                    df[col] = df[col].astype(str).apply(self.parse_time)
+
+                df["arrival_delay_minutes"] = df.apply(lambda r: self.compute_delay(r['planned_arrival'], r['actual_arrival']), axis=1)
+                df["departure_delay_minutes"] = df.apply(lambda r: self.compute_delay(r['planned_departure'], r['actual_departure']), axis=1)
+
+                df['location'] = df['location'].astype(str).str.strip()
+                if not station_map.empty:
+                    df = df.merge(station_map, on='location', how='left')
+
+                self.delay_data[route] = df
+                print(f" Loaded {len(df)} records for {route}")
+
+    def train_models(self):
+        df = pd.concat(self.delay_data.values(), ignore_index=True)
+        df = df.dropna(subset=["arrival_delay_minutes", "planned_arrival", "actual_arrival"])
+
+        df["planned_arrival_hour"] = df["planned_arrival"].apply(lambda t: t.hour if pd.notnull(t) else None)
+        df["planned_arrival_minute"] = df["planned_arrival"].apply(lambda t: t.minute if pd.notnull(t) else None)
+        df["day_of_week"] = pd.to_datetime(df["date_of_service"], format='mixed', dayfirst=True, errors='coerce').dt.dayofweek
+
+        df = pd.get_dummies(df, columns=["location", "direction"], drop_first=True)
+
+        X = df.drop(columns=[
+            "rid", "date_of_service", "planned_arrival", "actual_arrival",
+            "planned_departure", "actual_departure", "arrival_delay_minutes",
+            "departure_delay_minutes", "station_name", "route", "toc_code"
+        ])
+        y = df["arrival_delay_minutes"]
+        X = X.fillna(0)
+        valid_mask = X.notnull().all(axis=1) & y.notnull()
+        X = X[valid_mask]
+        y = y[valid_mask]
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42, test_size=0.2)
+
+        models = {
+            "Random Forest": RandomForestRegressor(random_state=42),
+            "Gradient Boosting": GradientBoostingRegressor(random_state=42),
+            "Linear Regression": LinearRegression(),
+            "XGBoost": XGBRegressor(random_state=42),
+            "Extra Trees": ExtraTreesRegressor(random_state=42),
+        }
+
+        predictions = {}
+
+        def evaluate(y_true, y_pred, name):
+            print(f"\n {name} Evaluation")
+            print("MAE :", round(mean_absolute_error(y_true, y_pred), 2))
+            print("RMSE:", round(np.sqrt(mean_squared_error(y_true, y_pred)), 2))
+            print("R²  :", round(r2_score(y_true, y_pred), 2))
+
+        plt.figure(figsize=(18, 10))
+        for i, (name, model) in enumerate(models.items(), start=1):
+            print(f"\n Training {name}...")
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+            predictions[name] = y_pred
+
+            evaluate(y_test, y_pred, name)
+
+            plt.subplot(2, 3, i)
+            plt.scatter(y_test, y_pred, alpha=0.4)
+            plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
+            plt.title(name)
+            plt.xlabel("True Delay (min)")
+            plt.ylabel("Predicted Delay (min)")
+
+        plt.tight_layout()
+        plt.show()
+
+        return y_test, predictions
+
+    def save_models(self, path_prefix="models/train_delay_"):
+        os.makedirs("models", exist_ok=True)
+        joblib.dump(self.rf, f"{path_prefix}random_forest.pkl")
+        joblib.dump(self.gbm, f"{path_prefix}gbm.pkl")
+        print(" Models saved successfully.")
+
+    def load_models(self, path_prefix="models/train_delay_"):
+        self.rf = joblib.load(f"{path_prefix}random_forest.pkl")
+        self.gbm = joblib.load(f"{path_prefix}gbm.pkl")
+        print(" Models loaded successfully.")
+
+chatbot = TrainDelayChatbot()
+chatbot.train_models()  
