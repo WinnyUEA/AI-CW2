@@ -1,46 +1,53 @@
-import re
+import re 
 import collections
-import collections.abc
-from ChatBotTrainMixed import compare_ticket_prices
-
+import collections.abc 
+from ChatBotTrainMixed import compare_ticket_prices 
 collections.Mapping = collections.abc.Mapping
 collections.Sequence = collections.abc.Sequence
 collections.Iterable = collections.abc.Iterable
-from experta import KnowledgeEngine, Rule, Fact, MATCH
-from fuzzywuzzy import fuzz
-import sqlite3
-import random
-import pandas as pd
-import nltk
-from nltk.stem import PorterStemmer, WordNetLemmatizer
-from nltk.corpus import stopwords
-from typing import Dict, List, Optional, Tuple
-import spacy
-from spacy.matcher import Matcher
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from urllib.parse import urlencode
-from datetime import datetime, timedelta
-import time
-from dateutil.parser import parse
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error
+from experta import KnowledgeEngine, Rule, Fact, MATCH  
+from fuzzywuzzy import fuzz 
+import sqlite3  
+import random 
+import pandas as pd 
+import nltk 
+from nltk.stem import PorterStemmer, WordNetLemmatizer  
+from nltk.corpus import stopwords 
+from typing import Dict, List, Optional, Tuple 
+import spacy 
+from spacy.matcher import Matcher  
+from selenium import webdriver  
+from selenium.webdriver.common.by import By  
+from selenium.webdriver.support.ui import WebDriverWait 
+from selenium.webdriver.support import expected_conditions as EC  
+from urllib.parse import urlencode 
+from datetime import datetime, timedelta 
+import time 
+from dateutil.parser import parse 
+from sklearn.ensemble import RandomForestRegressor  
+from sklearn.model_selection import train_test_split 
+from sklearn.metrics import mean_absolute_error  
 import numpy as np
+import json
+
+
+with open("qna_kb.json") as f:
+    qa_kb = json.load(f)
 
 # Initialize spaCy for NLP
 try:
+# NLP Model Initialization 
     nlp = spacy.load('en_core_web_sm')
-    print("NLP model loaded successfully.")
+    print("NLP model loaded successfully.")  # Debug/logging output
 except:
-    print("spaCy not available. Some features will be limited.")
+    print("spaCy not available. Some features will be limited.")  # Debug/logging output
     nlp = None
 
 
+
+# RandomForestDelayPredictor: ML Model for Delay Prediction
 class RandomForestDelayPredictor:
-    """Random Forest delay predictor with dynamic station handling"""
+    #Random Forest delay predictor with dynamic station handling
 
     def __init__(self, station_sequences):
         self.model = RandomForestRegressor(
@@ -53,20 +60,24 @@ class RandomForestDelayPredictor:
         self.is_trained = False
         self.feature_names = ['day_of_week', 'hour_of_day', 'station_idx', 'route_type']
 
+
+    # Function: create stationmapping 
     def _create_station_mapping(self):
-        """Create dynamic station index mapping"""
+#Create dynamic station index mapping
         station_map = {}
         for route, stations in self.station_sequences.items():
             for idx, station in enumerate(stations):
                 station_map[(route, station)] = idx
-        return station_map
+        return station_map  # Return result
 
+
+    # Function: preprocess data 
     def preprocess_data(self, df):
         """Prepare data with dynamic station handling"""
         # Make a copy to avoid SettingWithCopyWarning
         df = df.copy()
 
-        # Convert times to datetime if they aren't already
+        # Convert times to datetime 
         if 'planned_departure' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['planned_departure']):
             try:
                 df['planned_departure'] = pd.to_datetime(df['planned_departure'], errors='coerce')
@@ -79,7 +90,7 @@ class RandomForestDelayPredictor:
                     (df['actual_departure'] - df['planned_departure']).dt.total_seconds() / 60
             )
 
-        # Add station position
+        # Add station position for the route
         df['station_idx'] = df.apply(
             lambda x: self.station_to_idx.get((x['route'], x['location']), -1),
             axis=1
@@ -96,8 +107,10 @@ class RandomForestDelayPredictor:
         # Drop rows with missing critical data
         df = df.dropna(subset=['delay_minutes', 'station_idx'])
 
-        return df
+        return df  # Return result
 
+
+    # Function: train data
     def train(self, df):
         processed = self.preprocess_data(df)
         X = processed[self.feature_names]
@@ -107,8 +120,10 @@ class RandomForestDelayPredictor:
         self.is_trained = True
         preds = self.model.predict(X_val)
         mae = mean_absolute_error(y_val, preds)
-        print(f"Model trained on {len(X_train)} samples. Validation MAE: {mae:.2f} minutes")
+        print(f"Model trained on {len(X_train)} samples. Validation MAE: {mae:.2f} minutes")  # Debug/logging output
 
+
+    # Function: predict delays time
     def predict(self, route, current_station):
         """Make prediction using current conditions"""
         if not self.is_trained:
@@ -116,9 +131,9 @@ class RandomForestDelayPredictor:
 
         station_idx = self.station_to_idx.get((route, current_station), -1)
         if station_idx == -1:
-            return None
+            return None  # Return result
 
-        # Create input features matching the training structure exactly
+        # standardize the features
         input_features = pd.DataFrame([{
             'day_of_week': datetime.now().weekday(),
             'hour_of_day': datetime.now().hour,
@@ -126,9 +141,11 @@ class RandomForestDelayPredictor:
             'route_type': 0 if route == 'Norwich-LST' else 1
         }])[self.feature_names]  # Ensure same column order as training
 
-        return float(self.model.predict(input_features)[0])
+        return float(self.model.predict(input_features)[0])  # Return result
 
 
+
+#  DelayReasoningEngine: Rule-Based Reasoning Engine 
 class DelayReasoningEngine(KnowledgeEngine):
     """Rule-based system for delay predictions"""
 
@@ -140,6 +157,8 @@ class DelayReasoningEngine(KnowledgeEngine):
     @Rule(Fact(route=MATCH.r),
           Fact(current_station=MATCH.s),
           Fact(reported_delay=MATCH.d))
+
+    #  Function: predict_delay 
     def predict_delay(self, r, s, d):
         # Calculate cumulative delay using rules
         stations = self.station_sequences[r]
@@ -157,9 +176,24 @@ class DelayReasoningEngine(KnowledgeEngine):
         self.declare(Fact(predicted_delay=total_delay))
 
 
+
+#  TrainTicketChatbotWithBooking: Main Chatbot Class 
+
+class GeneralRuleEngine(KnowledgeEngine):
+
+    @Rule(Fact(topic="refund"), Fact(condition="missed_train"))
+    def handle_missed_train_refund(self):
+        self.declare(Fact(response="If you missed your train, check if your ticket is flexible or refundable."))
+
+    @Rule(Fact(topic="bike"))
+    def handle_bike_policy(self):
+        self.declare(Fact(response="Folding bikes are allowed anytime. Standard bikes are allowed off-peak."))
+
+
 class TrainTicketChatbotWithBooking:
+
+    # --- Constructor / Initialization ---
     def __init__(self):
-        # [Previous initialization code unchanged]
         self.stemmer = PorterStemmer()
         self.lemmatizer = WordNetLemmatizer()
         self.stop_words = set(nltk.corpus.stopwords.words('english'))
@@ -168,7 +202,7 @@ class TrainTicketChatbotWithBooking:
             "Hi there! How can I assist with your train travel?"
         ]
         self.farewells = ["Thank you for using our service. Safe travels!"]
-        self.options_prompt = "What would you like to do today? You can:\n1. Book tickets\n2. Check for delays\n3. Exit"
+        self.options_prompt = "What would you like to do today? You can:\n1. Book tickets\n2. Check for delays\n3. Ask any other questions\n4. Exit"
         self.STATES = {
             'GREETING': 0,
             'GET_OPTION': 1,
@@ -213,6 +247,8 @@ class TrainTicketChatbotWithBooking:
         for route in self.station_sequences:
             self.normal_travel_times[route] = self.calculate_normal_travel_times(route)
 
+
+    # Function: load delay data
     def load_delay_data(self):
         """Load and process delay data from CSV files"""
         self.delay_data = {
@@ -227,7 +263,7 @@ class TrainTicketChatbotWithBooking:
                 df['route'] = 'Norwich-LST'
                 self.delay_data['Norwich-LST'].append(df)
             except FileNotFoundError:
-                print(f"Warning: {year}_service_details_Norwich_to_London.csv not found")
+                print(f"Warning: {year}_service_details_Norwich_to_London.csv not found")  # Debug/logging output
 
         # Load data for London to Norwich route
         for year in [2022, 2023, 2024]:
@@ -236,18 +272,21 @@ class TrainTicketChatbotWithBooking:
                 df['route'] = 'LST-Norwich'
                 self.delay_data['LST-Norwich'].append(df)
             except FileNotFoundError:
-                print(f"Warning: {year}_service_details_London_to_Norwich.csv not found")
+                print(f"Warning: {year}_service_details_London_to_Norwich.csv not found")  # Debug/logging output
 
         # Combine all data for each route
         for route in self.delay_data:
             if self.delay_data[route]:
                 self.delay_data[route] = pd.concat(self.delay_data[route])
-                print(f"Loaded {len(self.delay_data[route])} records for {route} route")
+                print(f"Loaded {len(self.delay_data[route])} records for {route} route")  # Debug/logging output
 
         # Extract station sequences from the data
         self.extract_station_sequences()
         self.preprocess_delay_data()
+        self.expecting_return_time = False
 
+
+    # Function extract_station_sequences
     def extract_station_sequences(self):
         """Properly extract station sequences from CSV files"""
         self.station_sequences = {'Norwich-LST': [], 'LST-Norwich': []}
@@ -272,10 +311,12 @@ class TrainTicketChatbotWithBooking:
             if len(sequences) > 0:
                 self.station_sequences['LST-Norwich'] = sequences.iloc[0]  # Take first sequence
 
-        print(f"Final station sequences: {self.station_sequences}")
+        print(f"Final station sequences: {self.station_sequences}")  # Debug logging output
 
+
+    #  Function preprocess_text 
     def preprocess_text(self, text: str) -> List[str]:
-        """Enhanced text preprocessing with stemming and lemmatization"""
+        #Enhanced text preprocessing with stemming and lemmatizatio
         try:
             # Tokenize and lowercase
             tokens = nltk.word_tokenize(text.lower())
@@ -300,45 +341,132 @@ class TrainTicketChatbotWithBooking:
                 except:
                     processed_tokens.append(token)
 
-            return processed_tokens
+            return processed_tokens  # Return result
         except Exception as e:
-            print(f"Error preprocessing text: {e}")
-            return []
+            print(f"Error preprocessing text: {e}")  # Debug/logging output
+            return []  # Return result
 
-    def parse_date(self, date_str: str) -> Optional[str]:
+
+    # --- Function: parse_date ---
+    def parse_date(self, date_str: str, relative_base: Optional[str] = None) -> Optional[str]:
         """Parse various date formats into DD/MM/YYYY"""
         try:
-            # Try different date formats
+            # Normalize input
+            date_str = date_str.lower().strip()
+            date_str = re.sub(r'\b(on|the|of)\b', ' ', date_str, flags=re.IGNORECASE)
+            date_str = re.sub(r'(\d+)(h)\b', r'\1th', date_str, flags=re.IGNORECASE)
+            date_str = ' '.join(date_str.split())
+            print(f"Normalized date string in parse_date: '{date_str}'")  # Debug  # Debug/logging output
+
+            # Skip if time-like string
+            if re.search(r'^(?:\d{1,2}\s*(?:am|pm))$', date_str, re.IGNORECASE):
+                print(f"Skipping time-like string: {date_str}'")  # Debug  # Debug/logging output
+                return None  # Return result
+
+            # Convert relative_base to datetime
+            base_date = None
+            if relative_base:
+                try:
+                    base_date = datetime.strptime(relative_base, '%d/%m/%Y')
+                except ValueError:
+                    base_date = datetime.now()
+
+            # Handle relative dates
+            relative_pattern = r'(\d+)\s*(day|days|week|weeks)\s*(later|after)'
+            match = re.search(relative_pattern, date_str, re.IGNORECASE)
+            if match:
+                num = int(match.group(1))
+                unit = match.group(2).lower()
+                if not base_date:
+                    base_date = datetime.now()
+                if unit in ('day', 'days'):
+                    result_date = base_date + timedelta(days=num)
+                elif unit in ('week', 'weeks'):
+                    result_date = base_date + timedelta(weeks=num)
+                return result_date.strftime('%d/%m/%Y')  # Return result
+
+            # Handle ordinal and month-first dates
+            patterns = [
+                r'(\d{1,2})(?:st|nd|rd|th)?\s*([A-Za-z]+)(?:\s*(\d{4}))?',  # Day-first: "15th July"
+                r'([A-Za-z]+)\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s*(\d{4}))?'   # Month-first: "July 15th"
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, date_str, re.IGNORECASE)
+                if match:
+                    groups = match.groups()
+                    print(f"Matched pattern {pattern}: {groups}")  # Debug  # Debug/logging output
+                    if pattern.startswith(r'(\d{1,2})'):  # Day-first
+                        day, month, year = groups
+                    else:  # Month-first
+                        month, day, year = groups
+                    # Validate month name
+                    valid_months = {
+                        'january': '01', 'jan': '01',
+                        'february': '02', 'feb': '02',
+                        'march': '03', 'mar': '03',
+                        'april': '04', 'apr': '04',
+                        'may': '05',
+                        'june': '06', 'jun': '06',
+                        'july': '07', 'jul': '07',
+                        'august': '08', 'aug': '08',
+                        'september': '09', 'sep': '09',
+                        'october': '10', 'oct': '10',
+                        'november': '11', 'nov': '11',
+                        'december': '12', 'dec': '12'
+                    }
+                    month_key = month.lower()
+                    if month_key not in valid_months:
+                        print(f"Invalid month name: '{month}'")  # Debug  # Debug/logging output
+                        continue
+                    month_num = valid_months[month_key]
+                    year = year or str(datetime.now().year)
+                    return f"{day.zfill(2)}/{month_num}/{year}"  # Return result
+
+            # Try standard date formats
             for fmt in ['%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d',
                         '%B %d %Y', '%b %d %Y', '%d %B %Y', '%d %b %Y']:
                 try:
                     dt = datetime.strptime(date_str, fmt)
-                    return dt.strftime('%d/%m/%Y')
+                    return dt.strftime('%d/%m/%Y')  # Return result
                 except ValueError:
                     continue
 
             # Handle relative dates
             today = datetime.now().date()
-            if date_str.lower() == 'today':
-                return today.strftime('%d/%m/%Y')
-            if date_str.lower() == 'tomorrow':
-                return (today + timedelta(days=1)).strftime('%d/%m/%Y')
+            if date_str == 'today':
+                return today.strftime('%d/%m/%Y')  # Return result
+            if date_str == 'tomorrow':
+                return (today + timedelta(days=1)).strftime('%d/%m/%Y')  # Return result
 
             # Handle "next <dayname>"
-            if date_str.lower().startswith('next '):
+            if date_str.startswith('next '):
                 day_name = date_str[5:].capitalize()
                 weekdays = ['Monday', 'Tuesday', 'Wednesday',
                             'Thursday', 'Friday', 'Saturday', 'Sunday']
                 if day_name in weekdays:
                     days_ahead = (weekdays.index(day_name) - today.weekday()) % 7
-                    if days_ahead <= 0:  # If today is that day, go to next week
+                    if days_ahead <= 0:
                         days_ahead += 7
-                    return (today + timedelta(days=days_ahead)).strftime('%d/%m/%Y')
+                    return (today + timedelta(days=days_ahead)).strftime('%d/%m/%Y')  # Return result
 
-            return None
-        except Exception:
-            return None
+            # Fuzzy parsing fallback
+            try:
+                dt = parse(date_str, fuzzy=True, dayfirst=True)
+                out = dt.strftime('%d/%m/%Y')
+                print(f"Fuzzy parsed date in parse_date: '{out}'")  # Debug  # Debug/logging output
+                return out  # Return result
+            except ValueError:
+                print(f"Fuzzy parsing failed in parse_date for: '{date_str}'")  # Debug  # Debug/logging output
+                pass
 
+            print(f"Date parsing failed in parse_date for: '{date_str}'")  # Debug  # Debug/logging output
+            return None  # Return result
+        except Exception as e:
+            print(f"Exception in parse_date: {str(e)}")  # Debug  # Debug/logging output
+            return None  # Return result
+
+
+    # --- Function: _train_delay_model ---
     def _train_delay_model(self):
         """Train model with all available data"""
         try:
@@ -348,7 +476,7 @@ class TrainTicketChatbotWithBooking:
                 self.delay_data['LST-Norwich']
             ], ignore_index=True)
 
-            print("\nColumns available for training:", combined_data.columns.tolist())
+            print("\nColumns available for training:", combined_data.columns.tolist())  # Debug/logging output
 
             # Check if we have enough data
             if len(combined_data) < 100:
@@ -356,13 +484,15 @@ class TrainTicketChatbotWithBooking:
 
             # Train the model
             self.delay_predictor.train(combined_data)
-            print("Random Forest model trained successfully")
+            print("Random Forest model trained successfully")  # Debug/logging output
 
         except Exception as e:
-            print(f"\nError training Random Forest model: {str(e)}")
-            print("Will use rule-based predictions only")
+            print(f"\nError training Random Forest model: {str(e)}")  # Debug/logging output
+            print("Will use rule-based predictions only")  # Debug/logging output
             self.delay_predictor.is_trained = False
 
+
+    # --- Function: preprocess_delay_data ---
     def preprocess_delay_data(self):
         """Clean and prepare delay data for analysis"""
         for route in self.delay_data:
@@ -401,7 +531,7 @@ class TrainTicketChatbotWithBooking:
             required_cols = ['planned_departure', 'actual_departure', 'location']
             missing_cols = [col for col in required_cols if col not in df.columns]
             if missing_cols:
-                print(f"Warning: Missing columns in {route} data: {missing_cols}")
+                print(f"Warning: Missing columns in {route} data: {missing_cols}")  # Debug/logging output
                 continue
 
             # Convert time columns to datetime.time
@@ -439,6 +569,8 @@ class TrainTicketChatbotWithBooking:
             # Calculate typical delays between stations
             self.calculate_typical_delays(route, df)
 
+
+    # --- Function: calculate_typical_delays ---
     def calculate_typical_delays(self, route, df):
         """Calculate typical delays between stations for a route"""
         if route not in self.station_sequences:
@@ -477,10 +609,12 @@ class TrainTicketChatbotWithBooking:
                 }
 
         self.delay_stats = delay_stats
-        print(f"Delay statistics calculated for {route}:")
+        print(f"Delay statistics calculated for {route}:")  # Debug/logging output
         for pair, stats in delay_stats.items():
-            print(f"{pair[0]}->{pair[1]}: mean={stats['mean_delay']:.1f} min, median={stats['median_delay']:.1f} min")
+            print(f"{pair[0]}->{pair[1]}: mean={stats['mean_delay']:.1f} min, median={stats['median_delay']:.1f} min")  # Debug/logging output
 
+
+    # --- Function: load_station_data ---
     def load_station_data(self, csv_path: str):
         """Load station data from CSV file with robust error handling"""
         self.stations = []  # List of station names
@@ -497,7 +631,7 @@ class TrainTicketChatbotWithBooking:
                 except:
                     df = pd.read_csv(csv_path, encoding='utf-16')
 
-            print(f"Successfully loaded CSV with {len(df)} rows")
+            print(f"Successfully loaded CSV with {len(df)} rows")  # Debug/logging output
 
             # Process each row
             for _, row in df.iterrows():
@@ -544,15 +678,17 @@ class TrainTicketChatbotWithBooking:
                             self.station_codes[alt_name.lower()] = tiploc
 
                 except Exception as e:
-                    print(f"Error processing row {_}: {e}")
+                    print(f"Error processing row {_}: {e}")  # Debug/logging output
                     continue
 
-            print(f"Loaded {len(self.stations)} stations total")
-            print(f"Sample stations: {self.stations[:5]}")
+            print(f"Loaded {len(self.stations)} stations total")  # Debug/logging output
+            print(f"Sample stations: {self.stations[:5]}")  # Debug/logging output
 
         except Exception as e:
-            print(f"Error loading station CSV: {e}")
+            print(f"Error loading station CSV: {e}")  # Debug/logging output
 
+
+    # --- Function: create_tables ---
     def create_tables(self):
         """Create database tables for conversation logging"""
         cursor = self.db_conn.cursor()
@@ -566,6 +702,8 @@ class TrainTicketChatbotWithBooking:
         ''')
         self.db_conn.commit()
 
+
+    # --- Function: log_conversation ---
     def log_conversation(self, user_input: str, response: str):
         """Log conversation to database"""
         cursor = self.db_conn.cursor()
@@ -575,14 +713,18 @@ class TrainTicketChatbotWithBooking:
         ''', (user_input, response))
         self.db_conn.commit()
 
+
+    # --- Function: initialize_nlp_matchers ---
     def initialize_nlp_matchers(self):
         if not nlp:
-            print("spaCy not available, skipping NLP matcher initialization.")
+            print("spaCy not available, skipping NLP matcher initialization.")  # Debug/logging output
             return
         self.matcher = Matcher(nlp.vocab)
         self.matcher.add("DEPARTURE", [[{"LOWER": {"IN": ["from", "departing"]}}, {"ENT_TYPE": "GPE"}]])
         self.matcher.add("DESTINATION", [[{"LOWER": {"IN": ["to", "going"]}}, {"ENT_TYPE": "GPE"}]])
 
+
+    # --- Function: match_station ---
     def match_station(self, text: str, route: Optional[str] = None) -> Optional[str]:
         """Improved station matching with route context"""
         text = text.lower().strip()
@@ -598,18 +740,18 @@ class TrainTicketChatbotWithBooking:
             for code in self.station_sequences[route]:
                 name = self.get_station_name(code).lower()
                 if text == name or text in name:
-                    return self.get_station_name(code)
+                    return self.get_station_name(code)  # Return result
                 for station, abbrevs in abbrev_map.items():
                     if station in name and any(abbr in text for abbr in abbrevs):
-                        return self.get_station_name(code)
+                        return self.get_station_name(code)  # Return result
 
         # Check full names
         for name in self.station_codes.keys():
             if text == name.lower():
-                return name
+                return name  # Return result
             for station, abbrevs in abbrev_map.items():
                 if station in name.lower() and any(abbr in text for abbr in abbrevs):
-                    return name
+                    return name  # Return result
 
         # Fuzzy matching as fallback
         best_match = None
@@ -620,22 +762,28 @@ class TrainTicketChatbotWithBooking:
                 best_score = score
                 best_match = name
 
-        return best_match
+        return best_match  # Return result
 
+
+    # --- Function: get_station_code ---
     def get_station_code(self, station_name: str) -> Optional[str]:
         """Get station code from station name"""
-        return self.station_codes.get(station_name.lower())
+        return self.station_codes.get(station_name.lower())  # Return result
 
+
+    # --- Function: get_station_name ---
     def get_station_name(self, code: str) -> str:
         """Get proper station name from code"""
         for name, station_code in self.station_codes.items():
             if station_code == code:
                 # Clean up names with parentheses
                 if '(' in name:
-                    return name.split('(')[0].strip()
-                return name
-        return code  # Fallback to code if name not found
+                    return name.split('(')[0].strip()  # Return result
+                return name  # Return result
+        return code  # Fallback to code if name not found  # Return result
 
+
+    # --- Function: generate_station_suggestions ---
     def generate_station_suggestions(self, partial_name: str, route: str = None) -> List[str]:
         """Generate station suggestions based on input"""
         partial = partial_name.lower()
@@ -654,24 +802,26 @@ class TrainTicketChatbotWithBooking:
             if partial in name.lower() and name not in matches:
                 matches.append(name)
 
-        return sorted(matches, key=lambda x: len(x))[:5]  # Return top 5 shortest matches
+        return sorted(matches, key=lambda x: len(x))[:5]  # Return top 5 shortest matches  # Return result
 
+
+    # --- Function: parse_relative_date ---
     def parse_relative_date(self, date_str: str) -> Optional[str]:
         """Improved relative date parsing"""
         today = datetime.now().date()
         date_str = date_str.lower().strip()
 
         if date_str in ['today', 'now']:
-            return today.strftime('%d/%m/%Y')
+            return today.strftime('%d/%m/%Y')  # Return result
         elif date_str == 'tomorrow':
-            return (today + timedelta(days=1)).strftime('%d/%m/%Y')
+            return (today + timedelta(days=1)).strftime('%d/%m/%Y')  # Return result
         elif date_str == 'day after tomorrow':
-            return (today + timedelta(days=2)).strftime('%d/%m/%Y')
+            return (today + timedelta(days=2)).strftime('%d/%m/%Y')  # Return result
         elif date_str.startswith('next '):
             if date_str.endswith('week'):
-                return (today + timedelta(weeks=1)).strftime('%d/%m/%Y')
+                return (today + timedelta(weeks=1)).strftime('%d/%m/%Y')  # Return result
             elif date_str.endswith('month'):
-                return (today.replace(month=today.month + 1)).strftime('%d/%m/%Y')
+                return (today.replace(month=today.month + 1)).strftime('%d/%m/%Y')  # Return result
             day_name = date_str[5:].capitalize()
             weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday',
                         'Friday', 'Saturday', 'Sunday']
@@ -679,15 +829,15 @@ class TrainTicketChatbotWithBooking:
                 days_ahead = (weekdays.index(day_name) - today.weekday()) % 7
                 if days_ahead == 0:  # Today is that day
                     days_ahead = 7  # Next week
-                return (today + timedelta(days=days_ahead)).strftime('%d/%m/%Y')
+                return (today + timedelta(days=days_ahead)).strftime('%d/%m/%Y')  # Return result
         elif date_str.startswith('in '):
             parts = date_str.split()
             if len(parts) >= 3 and parts[1].isdigit():
                 num = int(parts[1])
                 if parts[2] in ['day', 'days']:
-                    return (today + timedelta(days=num)).strftime('%d/%m/%Y')
+                    return (today + timedelta(days=num)).strftime('%d/%m/%Y')  # Return result
                 elif parts[2] in ['week', 'weeks']:
-                    return (today + timedelta(weeks=num)).strftime('%d/%m/%Y')
+                    return (today + timedelta(weeks=num)).strftime('%d/%m/%Y')  # Return result
         elif date_str.startswith('on '):
             day_name = date_str[3:].capitalize()
             weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday',
@@ -696,93 +846,163 @@ class TrainTicketChatbotWithBooking:
                 days_ahead = (weekdays.index(day_name) - today.weekday()) % 7
                 if days_ahead == 0:  # Today is that day
                     days_ahead = 7  # Next week
-                return (today + timedelta(days=days_ahead)).strftime('%d/%m/%Y')
+                return (today + timedelta(days=days_ahead)).strftime('%d/%m/%Y')  # Return result
 
         # Try standard date formats
         try:
             datetime.strptime(date_str, '%d/%m/%Y')
-            return date_str
+            return date_str  # Return result
         except ValueError:
             pass
 
-        return None
+        return None  # Return result
 
+
+    # --- Function: parse_time ---
     def parse_time(self, time_str: str) -> Optional[str]:
         """Parse time string to HH:MM format"""
         try:
             dt = parse(time_str, fuzzy=True)
-            return dt.strftime('%H:%M')
+            return dt.strftime('%H:%M')  # Return result
         except:
-            return None
+            return None  # Return result
 
+
+    # --- Function: extract_booking_info ---
     def extract_booking_info(self, text: str) -> Tuple[Dict, List]:
-        print(f"\nExtracting info from: '{text}'")
+        print(f"\nExtracting info from: '{text}'")  # Debug/logging output
         extracted = {}
         missing = []
+        lower = text.lower().strip()
 
         # Detect route for station matching
         route = self.detect_route(text)
 
-        # --- STATION MATCHING ---
-        from_match = re.search(
-            r'(?:from|departing)\s+([a-z\s]+?)\s+'
-            r'(?:to|going to|arriving in|arriving at)\s+([a-z\s]+?)(?:\s|$)',
-            text, re.IGNORECASE
+        # Process station matching
+        if self.current_state == self.STATES['PARSE_BOOKING'] or 'from' in lower or 'to' in lower:
+            from_match = re.search(
+                r'(?:from|departing)\s+([a-z\s]+?)\s+'
+                r'(?:to|going to|arriving in|arriving at)\s+([a-z\s]+?)(?:\s|$)',
+                text, re.IGNORECASE
+            )
+            if from_match:
+                from_station = self.match_station(from_match.group(1), route)
+                to_station = self.match_station(from_match.group(2), route)
+                print(f"Matched stations: from={from_station}, to={to_station}")  # Debug/logging output
+                if from_station and to_station:
+                    extracted['origin'] = self.station_codes.get(from_station.lower())
+                    extracted['destination'] = self.station_codes.get(to_station.lower())
+
+        # --- PASSENGER EXTRACTION ---
+        adults_match = re.search(r'(\d+)\s*(?:adult|adults)', lower)
+        children_match = re.search(r'(\d+)\s*(?:child|children)', lower)
+        passengers_match = re.search(r'(\d+)\s*(?:passenger|passengers)', lower)
+
+        if adults_match:
+            extracted['adults'] = int(adults_match.group(1))
+
+        if children_match:
+            extracted['children'] = int(children_match.group(1))
+
+        # Fallback for generic "3 passengers"
+        if not adults_match and passengers_match:
+            extracted['adults'] = int(passengers_match.group(1))
+            extracted['children'] = 0
+
+        print(f"Extracted passengers: adults={extracted.get('adults', 'not set')}, children={extracted.get('children', 'not set')}")  # Debug/logging output
+
+
+        # --- TIME EXTRACTION ---
+        if re.search(r'\b(before|arrive by)\b', lower):
+            extracted['depart_type'] = 'arriving'
+            extracted['time_preference'] = 'by'
+        else:
+            extracted['depart_type'] = 'departing'
+            extracted['time_preference'] = 'at'
+
+        # Extract the actual time
+        time_match = re.search(
+            r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)', lower
         )
-        if from_match:
-            from_station = self.match_station(from_match.group(1), route)
-            to_station = self.match_station(from_match.group(2), route)
-            print(f"Matched stations: from={from_station}, to={to_station}")
-            if from_station and to_station:
-                extracted['origin'] = self.station_codes.get(from_station.lower())
-                extracted['destination'] = self.station_codes.get(to_station.lower())
+        if time_match:
+            hour = int(time_match.group(1))
+            minute = int(time_match.group(2) or '00')
+            period = time_match.group(3).lower()
+
+            # Convert to 24-hour format
+            if period == 'pm' and hour != 12:
+                hour += 12
+            elif period == 'am' and hour == 12:
+                hour = 0
+
+            requested_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # Adjust time backward by 60 mins if user says 'before' or 'arrive by'
+            if extracted.get('time_preference') == 'by':
+                requested_time -= timedelta(minutes=60)
+
+            if self.expecting_return_time:
+                extracted['return_time'] = requested_time.strftime('%H:%M')
+                print(f"Extracted return time: '{extracted['return_time']}' (adjusted for 'before')")  # Debug/logging output
+                self.expecting_return_time = False
+            else:
+                extracted['time'] = requested_time.strftime('%H:%M')
+                print(f"Extracted time: '{extracted['time']}' (adjusted for 'before')")  # Debug/logging output
 
         # --- DATE EXTRACTION ---
-        lower = text.lower()
-        # Regex to find relative-date phrases anywhere in the input
-        rel_pattern = (
-            r'\b('
+        date_pattern = (
+            r'\b(?:'
             r'today|tomorrow|day after tomorrow|'
             r'next\s+\w+|'
-            r'in\s+\d+\s+(?:day|days|week|weeks)|'
-            r'on\s+\w+'
+            r'in\s+\d+\s*(?:day|days|week|weeks)|'
+            r'\d+\s*(?:day|days|week|weeks)\s*(?:later|after)|'
+            r'(?:on\s+|the\s+|on\s+the\s+)?\d{1,2}(?:st|nd|rd|th)?\s*(?:of\s*)?[A-Za-z]+(?:\s*\d{4})?(?!\s*(?:am|pm))|'  # Day-first
+            r'(?:on\s+|the\s+)?[A-Za-z]+\s*\d{1,2}(?:st|nd|rd|th)?(?:\s*\d{4})?(?!\s*(?:am|pm))|'  # Month-first
+            r'on\s+\d{1,2}(?:st|nd|rd|th)?\s*(?:of\s*)?[A-Za-z]+(?:\s*\d{4})?(?!\s*(?:am|pm))'  # "on 15th of July"
             r')\b'
         )
-        m = re.search(rel_pattern, lower)
-        if m:
-            # Parse only the matched phrase
-            phrase = m.group(1)
-            parsed = self.parse_relative_date(phrase)
+        matches = re.findall(date_pattern, lower, re.IGNORECASE)
+        print(f"Date pattern matches: {matches}")  # Debug  # Debug/logging output
+
+        for phrase in matches:
+            original_phrase = phrase
+            phrase = re.sub(r'\b(on|the|of)\b', ' ', phrase, flags=re.IGNORECASE).strip()
+            phrase = re.sub(r'(\d+)(h)\b', r'\1th', phrase, flags=re.IGNORECASE)
+            phrase = ' '.join(phrase.split())
+            print(f"Trying to parse date phrase: '{phrase}' (original: '{original_phrase}')")  # Debug  # Debug/logging output
+            relative_base = self.booking_details.get('date') if self.booking_details.get('is_return') else None
+            parsed = self.parse_date(phrase, relative_base=relative_base)
             if parsed:
+                print(f"Parsed date: '{parsed}' from phrase: '{phrase}'")  # Debug  # Debug/logging output
                 if self.booking_details.get('is_return'):
                     extracted['return_date'] = parsed
                 else:
                     extracted['date'] = parsed
-        else:
-            # Fallback: fuzzy-parse any explicit date in the text
-            try:
-                dt = parse(text, fuzzy=True, dayfirst=True)
-                out = dt.strftime('%d/%m/%Y')
-                if self.booking_details.get('is_return'):
-                    extracted['return_date'] = out
-                else:
-                    extracted['date'] = out
-            except:
-                pass
+                break
 
-        # --- TIME EXTRACTION ---
-        time_match = re.search(r'(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)', text, re.IGNORECASE)
-        if time_match:
-            parsed_time = self.parse_time(time_match.group(0))
-            if parsed_time:
-                if self.booking_details.get('is_return'):
-                    extracted['return_time'] = parsed_time
-                else:
-                    extracted['time'] = parsed_time
-
-        # --- DEFAULT PASSENGERS ---
-        extracted.setdefault('adults', '1')
-        extracted.setdefault('children', '0')
+        # Fallback: fuzzy parsing
+        if not extracted.get('date') and not extracted.get('return_date'):
+            date_indicators = [
+                'today', 'tomorrow', 'next', 'in ', 'on ',
+                'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+                'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+                r'\d{1,2}/\d{1,2}/\d{2,4}',
+                r'\d{1,2}(?:st|nd|rd|th|h)',
+                r'[A-Za-z]+\s*\d{1,2}',
+                r'\d{1,2}\s*[A-Za-z]+'
+            ]
+            if any(re.search(ind, lower, re.IGNORECASE) for ind in date_indicators) and not time_match:
+                parse_text = text.lower().split(' on ', 1)[1].strip() if ' on ' in lower else text
+                try:
+                    dt = parse(parse_text, fuzzy=True, dayfirst=True)
+                    out = dt.strftime('%d/%m/%Y')
+                    print(f"Fuzzy parsed date: '{out}' from text: '{parse_text}'")  # Debug  # Debug/logging output
+                    if self.booking_details.get('is_return'):
+                        extracted['return_date'] = out
+                    else:
+                        extracted['date'] = out
+                except Exception as e:
+                    print(f"Fuzzy parsing exception: {str(e)} for text: '{parse_text}'")  # Debug  # Debug/logging output
 
         # --- CHECK REQUIRED FIELDS & MISSING ---
         required = ['origin', 'destination', 'date', 'time']
@@ -794,34 +1014,95 @@ class TrainTicketChatbotWithBooking:
             if not (extracted.get(field) or self.booking_details.get(field))
         ]
 
-        print(f"Extracted: {extracted}")
-        print(f"Missing: {missing}")
-        return extracted, missing
+        print(f"Extracted: {extracted}")  # Debug/logging output
+        print(f"Missing: {missing}")  # Debug/logging output
+        return extracted, missing  # Return result
 
+
+    # --- Function: build_url ---
+    def build_url(self):
+        """Build the booking URL from collected details"""
+        origin = self.booking_details['origin']
+        destination = self.booking_details['destination']
+        date_str = self.booking_details['date']
+        time_str = self.booking_details['time']
+        adults = self.booking_details['adults']
+        children = self.booking_details['children']
+        return_date_str = self.booking_details['return_date']
+        return_time_str = self.booking_details['return_time']
+        depart_type = self.booking_details['depart_type']
+        time_preference = self.booking_details['time_preference']
+
+        day, month, year = date_str.split("/")
+        hour, minute = time_str.split(":")
+        minute = self.round_down_to_quarter(minute)
+        leaving_date = f"{day}{month}{year[2:]}"
+        leaving_hour = hour.zfill(2)
+
+        params = {
+            "origin": origin,
+            "destination": destination,
+            "leavingType": depart_type,
+            "leavingDate": leaving_date,
+            "leavingHour": leaving_hour,
+            "leavingMin": minute,
+            "adults": adults,
+            "children": children,
+            "extraTime": "0"
+        }
+
+        if time_preference == 'by':
+            params['leavingType'] = 'arriving'
+        elif time_preference == 'after':
+            params['leavingType'] = 'departing'
+
+        if return_date_str and return_time_str:
+            return_day, return_month, return_year = return_date_str.split("/")
+            return_hour, return_minute = return_time_str.split(":")
+            return_minute = self.round_down_to_quarter(return_minute)
+            params.update({
+                "returningType": depart_type,
+                "returningDate": f"{return_day}{return_month}{return_year[2:]}",
+                "returningHour": return_hour.zfill(2),
+                "returningMin": return_minute
+            })
+
+        url = "https://www.nationalrail.co.uk/journey-planner/?" + urlencode(params)
+        return url, int(hour), int(minute)  # Return result
+
+
+
+
+
+    # --- Function: is_station_on_route ---
     def is_station_on_route(self, station_code: str, route: str) -> bool:
         """Check if station exists in route sequence"""
-        return station_code in self.station_sequences.get(route, [])
+        return station_code in self.station_sequences.get(route, [])  # Return result
 
+
+    # --- Function: validate_station_on_route ---
     def validate_station_on_route(self, station_name: str, route: str) -> Tuple[bool, str]:
         """Check if station exists and is on the specified route"""
         matched_station = self.match_station(station_name)
         if not matched_station:
-            return False, "Station not recognized"
+            return False, "Station not recognized"  # Return result
 
         station_code = self.station_codes.get(matched_station.lower())
         if not station_code:
-            return False, "Station code not found"
+            return False, "Station code not found"  # Return result
 
         # Special case for London Liverpool Street
         if 'london' in matched_station.lower() and 'LST' in self.station_sequences.get(route, []):
-            return True, 'LST'
+            return True, 'LST'  # Return result
 
         if station_code not in self.station_sequences.get(route, []):
             route_stations = [self.get_station_name(code) for code in self.station_sequences[route]]
-            return False, f"This station isn't on your {route} route. Please choose from: {', '.join(route_stations)}"
+            return False, f"This station isn't on your {route} route. Please choose from: {', '.join(route_stations)}"  # Return result
 
-        return True, station_code
+        return True, station_code  # Return result
 
+
+    # --- Function: generate_missing_prompt ---
     def generate_missing_prompt(self, missing: List[str]) -> str:
         """Generate a prompt for missing fields"""
         prompt = "Could you please provide the "
@@ -845,49 +1126,59 @@ class TrainTicketChatbotWithBooking:
             prompt += f"{missing_items[0]} and {missing_items[1]}"
         else:
             prompt += ", ".join(missing_items[:-1]) + f", and {missing_items[-1]}"
-        return prompt + "?"
+        return prompt + "?"  # Return result
 
+
+    # --- Function: validate_date ---
     def validate_date(self, date_str: str) -> bool:
         """Validate date format DD/MM/YYYY or relative date expressions"""
         # First try relative date parsing
         relative_date = self.parse_relative_date(date_str)
         if relative_date:
-            return True
+            return True  # Return result
 
         # Then try standard date format
         try:
             day, month, year = date_str.split('/')
             if len(day) == 2 and len(month) == 2 and len(year) == 4:
                 datetime.strptime(date_str, '%d/%m/%Y')
-                return True
+                return True  # Return result
         except ValueError:
-            return False
-        return False
+            return False  # Return result
+        return False  # Return result
 
+
+    # --- Function: validate_time ---
     def validate_time(self, time_str: str) -> bool:
         """Validate time format HH:MM"""
         try:
             datetime.strptime(time_str, '%H:%M')
-            return True
-        except ValueError:
-            return False
+            return True  # Return result
+        except ValueError:  
+            return False  # Return result
 
+
+    # --- Function: detect_route ---
     def detect_route(self, text):
         text = text.lower()
         if "norwich" in text and "london" in text:
             if text.find("norwich") < text.find("london"):
-                return 'Norwich-LST'
-            return 'LST-Norwich'
-        return None
+                return 'Norwich-LST'  # Return result
+            return 'LST-Norwich'  # Return result
+        return None  # Return result
 
+
+    # --- Function: validate_direction ---
     def validate_direction(self, route: str, current: str, destination: str) -> bool:
         """Properly validate travel direction based on actual sequences"""
         try:
             stations = self.station_sequences[route]
-            return stations.index(current) < stations.index(destination)
+            return stations.index(current) < stations.index(destination)  # Return result
         except (ValueError, KeyError):
-            return False
+            return False  # Return result
 
+
+    # --- Function: detect_intent ---
     def detect_intent(self, text: str) -> str:
         processed = self.preprocess_text(text)
         if not processed:
@@ -895,36 +1186,30 @@ class TrainTicketChatbotWithBooking:
 
         tokens = set(processed)
 
-        # Enhanced delay detection
+        # General question triggers (e.g., bike policy, refunds)
+        qa_triggers = {
+    'bike', 'luggage', 'refund', 'miss', 'ticket', 'arrive', 'children', 'travel',
+    'platform', 'toilet', 'compensation', 'repay', 'wifi', 'drink', 'seat',
+    'pets', 'animal', 'quiet', 'coach', 'charging', 'socket', 'lost', 'property',
+    'railcard', 'discount', 'access', 'step-free', 'payment', 'contactless',
+    'engineering', 'works', 'tracker', 'delay', 'cancel', 'reservation',
+    'schedule', 'timetable', 'early', 'late', 'bag', 'machine'
+}
+
+        if tokens & qa_triggers:
+            return "general_question"
+
+        # Delay inquiry triggers
         delay_triggers = {
             'delay', 'late', 'arriv', 'time', 'status',
             'long', 'when', 'current', 'predict', 'hold',
             'behind', 'schedule', 'timetable', 'due'
         }
-
         if tokens & delay_triggers:
-            # Check for route using processed tokens
-            route = None
+            # Check for route mentions to classify as complex inquiry
             if 'norwich' in tokens and 'london' in tokens:
-                norwich_pos = processed.index('norwich') if 'norwich' in processed else -1
-                london_pos = processed.index('london') if 'london' in processed else -1
-
-                if norwich_pos >= 0 and london_pos >= 0:
-                    route = 'Norwich-LST' if norwich_pos < london_pos else 'LST-Norwich'
-
-            # Check for delay duration with better pattern matching
-            delay_mins = None
-            for i, token in enumerate(processed):
-                if token.isdigit():
-                    # Check next token for time unit
-                    if i + 1 < len(processed) and processed[i + 1] in ['min', 'minut', 'hour', 'hr']:
-                        delay_mins = int(token)
-                        if processed[i + 1] in ['hour', 'hr']:
-                            delay_mins *= 60
-                        break
-
-            if route or delay_mins:
                 return "complex_delay_inquiry"
+            return "delay_inquiry"
 
         # Greeting detection
         greeting_words = {'hello', 'hi', 'hey', 'greet'}
@@ -940,20 +1225,59 @@ class TrainTicketChatbotWithBooking:
         booking_triggers = {
             'book', 'ticket', 'journey', 'travel', 'train',
             'schedul', 'timet', 'from', 'to', 'depart', 'arriv',
-            'go', 'need', 'want', 'would'  # Stems/lemmas of common words
+            'go', 'need', 'want', 'would'
         }
         if tokens & booking_triggers:
             return "booking"
 
-        # Delay detection
-        delay_triggers = {
-            'delay', 'late', 'arriv', 'time', 'status',
-            'long', 'when', 'current', 'predict'
-        }
-        if tokens & delay_triggers:
-            return "delay_inquiry"
-
         return "unknown"
+
+
+
+    # --- Function: extract_delay_info ---
+
+    def handle_general_question(self, user_input):
+        # Load QnA KB
+        with open("qna_kb.json", "r") as f:
+            kb = json.load(f)
+
+        best_match = None
+        best_score = 0
+
+        for entry in kb:
+            score = fuzz.token_sort_ratio(user_input.lower(), entry['question'].lower())
+            if score > best_score and score > 75:
+                best_score = score
+                best_match = entry
+
+        if best_match:
+            answer = best_match['answer']
+        else:
+            # Try reasoning fallback
+            self.general_engine = GeneralRuleEngine()
+            self.general_engine.reset()
+            if "refund" in user_input and "miss" in user_input:
+                self.general_engine.declare(Fact(topic="refund", condition="missed_train"))
+            elif "bike" in user_input:
+                self.general_engine.declare(Fact(topic="bike"))
+            self.general_engine.run()
+            answer = getattr(self.general_engine, 'response', None)
+            if not answer:
+                answer = "Sorry, I don't have an answer for that yet."
+
+        # After answering, return to options
+        self.current_state = self.STATES['GET_OPTION']
+        return f"{answer}\n\n{self.options_prompt}"
+        
+    def get_best_answer(user_question, qa_kb):
+        best_match = None
+        best_score = 0
+        for qa in qa_kb:
+            score = fuzz.token_sort_ratio(user_question.lower(), qa["question"].lower())
+            if score > best_score:
+                best_score = score
+                best_match = qa
+        return best_match["answer"] if best_score > 75 else "Sorry, I don't have an answer for that."
 
     def extract_delay_info(self, text: str) -> dict:
         """Extract delay-related information from text"""
@@ -986,8 +1310,10 @@ class TrainTicketChatbotWithBooking:
                 elif 'destination' not in extracted:
                     extracted['destination'] = matched_station
 
-        return extracted
+        return extracted  # Return result
 
+
+    # --- Function: make_delay_prediction ---
     def make_delay_prediction(self) -> str:
         """Generate prediction when all details are available"""
         try:
@@ -997,17 +1323,31 @@ class TrainTicketChatbotWithBooking:
             delay = self.delay_details['reported_delay']
 
             if not self.validate_direction(route, current, dest):
-                return ("You appear to be traveling in the wrong direction for this route. "
+                return ("You appear to be traveling in the wrong direction for this route. "  # Return result
                         f"From {self.get_station_name(current)}, you should be heading towards: "
                         f"{', '.join(self.get_station_name(code) for code in self.station_sequences[route][self.station_sequences[route].index(current) + 1:])}")
 
-            prediction = self.predict_arrival(route, current, delay, dest)
+            rf_prediction = self.delay_predictor.predict(route, current)
+            rf_prediction = max(0, rf_prediction) # Removes negative predictions
+            total_delay = delay + rf_prediction
+
+            # Reuse normal travel time logic
+            arrival_info = self.predict_arrival(route, current, total_delay, dest)
+
             self.current_state = self.STATES['GET_OPTION']
-            return f"{prediction}\n\n{self.options_prompt}"
+            return (  # Return result
+                f"📊 Based on current data, the predicted delay from {self.get_station_name(current)} is approximately {rf_prediction:.1f} minutes.\n"
+                f"📈 Including your reported delay of {delay} minutes, total delay is estimated at {total_delay:.1f} minutes.\n\n"
+                f"{arrival_info}\n\n"
+                f"{self.options_prompt}"
+            )
 
         except Exception as e:
-            return f"Sorry, I couldn't make a prediction: {str(e)}"
+            return f"Sorry, I couldn't make a prediction: {str(e)}"  # Return result
 
+
+
+    # --- Function: handle_destination_input ---
     def handle_destination_input(self, user_input: str) -> str:
         is_valid, message = self.validate_station_on_route(
             user_input,
@@ -1024,12 +1364,14 @@ class TrainTicketChatbotWithBooking:
             ]
 
             if suggestions:
-                return f"{message}\nDid you mean: {', '.join(suggestions[:3])}"
-            return message
+                return f"{message}\nDid you mean: {', '.join(suggestions[:3])}"  # Return result
+            return message  # Return result
 
         self.delay_details['destination'] = message  # message contains station_code here
-        return self.make_delay_prediction()
+        return self.make_delay_prediction()  # Return result
 
+
+    # --- Function: handle_delay_inquiry ---
     def handle_delay_inquiry(self, user_input: str) -> str:
         """Handle complex delay inquiries with proper validation"""
         # Extract route
@@ -1039,7 +1381,7 @@ class TrainTicketChatbotWithBooking:
             else:
                 route = 'LST-Norwich'
         else:
-            return "Please specify your route as 'Norwich to London' or 'London to Norwich'"
+            return "Please specify your route as 'Norwich to London' or 'London to Norwich'"  # Return result
 
         # Extract delay minutes
         delay_match = re.search(r'(\d+)\s*(minute|min|hour|hr)', user_input.lower())
@@ -1053,16 +1395,44 @@ class TrainTicketChatbotWithBooking:
         # Determine next question
         if not self.delay_details.get('current_station'):
             self.current_state = self.STATES['GET_CURRENT_STATION']
-            return "Which station are you currently at?"
+            return "Which station are you currently at?"  # Return result
         elif not self.delay_details.get('reported_delay'):
             self.current_state = self.STATES['GET_DELAY_DURATION']
-            return "How many minutes delayed is your train?"
+            return "How many minutes delayed is your train?"  # Return result
         elif not self.delay_details.get('destination'):
             self.current_state = self.STATES['GET_DESTINATION']
-            return "Which station is your destination?"
+            return "Which station is your destination?"  # Return result
         else:
-            return self.make_delay_prediction()
+            return self.make_delay_prediction()  # Return result
 
+
+
+    # --- Function: handle_delay_duration ---
+    def handle_delay_duration(self, user_input: str) -> str:
+        """Handle user input for delay duration during delay inquiry"""
+        try:
+            # Extract delay in minutes from input
+            delay_match = re.search(r'(\d+)\s*(minute|min|hour|hr)?', user_input.lower())
+            if delay_match:
+                delay = int(delay_match.group(1))
+                if delay_match.group(2) in ['hour', 'hr']:
+                    delay *= 60  # Convert hours to minutes
+                self.delay_details['reported_delay'] = delay
+
+                # Ask for destination if not already known
+                if not self.delay_details.get('destination'):
+                    self.current_state = self.STATES['GET_DESTINATION']
+                    return "Which station is your destination?"  # Return result
+                else:
+                    return self.make_delay_prediction()  # Return result
+            else:
+                return "Please enter the delay time in minutes or hours (e.g. '15 minutes', '1 hour')."  # Return result
+        except Exception as e:
+            return f"Sorry, I couldn't understand the delay duration. Error: {str(e)}"  # Return result
+
+
+
+    # --- Function: generate_response ---
     def generate_response(self, user_input: str) -> str:
         # Log the raw input
         self.log_conversation(user_input, "")
@@ -1070,53 +1440,76 @@ class TrainTicketChatbotWithBooking:
         # Empty‐input guard
         if not user_input.strip():
             if self.current_state == self.STATES['GET_MISSING_INFO']:
-                return "Please provide the missing information: " + self.generate_missing_prompt(self.missing_fields)
-            return "Please provide a valid input."
+                return "Please provide the missing information: " + self.generate_missing_prompt(self.missing_fields)  # Return result
+            return "Please provide a valid input."  # Return result
+
+        # Add this new condition here - handles "ok" after ticket display
+        if user_input.lower() == 'ok' and self.current_state == self.STATES['GET_OPTION']:
+            return self.options_prompt  # Return result
+
+        # Then continue with the existing intent detection
+
+        if user_input.lower() in ['go back', 'main menu', 'start over', 'menu']:
+            self.booking_details = {k: None for k in self.booking_details}  # Optional: clear context
+            self.current_state = self.STATES['GET_OPTION']
+            return "Returning to the main menu...\n\n" + self.options_prompt
 
         intent = self.detect_intent(user_input)
+
+        # Handle general Q&A anytime
+        # Only handle general questions in neutral states (not booking/delay flow)
+        if intent == "general_question" and self.current_state in [
+            self.STATES['GET_OPTION'],
+            self.STATES['GREETING'],
+            self.STATES['FAREWELL']
+        ]:
+            answer = self.handle_general_question(user_input)
+            self.current_state = self.STATES['GET_OPTION']
+            return answer
+
+
+
 
         # Farewell at any time
         if intent == "farewell":
             self.current_state = self.STATES['FAREWELL']
-            return random.choice(self.farewells)
+            return random.choice(self.farewells)  # Return result
 
         # GREETING → OPTIONS
         if self.current_state == self.STATES['GREETING']:
             if intent == "delay_inquiry":
                 self.current_state = self.STATES['DELAY_INQUIRY']
-                return "I can help with delay predictions. First, which route are you on? (Norwich to London or London to Norwich)"
+                return "I can help with delay predictions. First, which route are you on? (Norwich to London or London to Norwich)"  # Return result
             else:
                 self.current_state = self.STATES['GET_OPTION']
-                return f"{random.choice(self.greetings)}\n{self.options_prompt}"
+                return f"{random.choice(self.greetings)}\n{self.options_prompt}"  # Return result
+            
+
+
 
         # GET_OPTION → either DELAY or BOOKING flow
         elif self.current_state == self.STATES['GET_OPTION']:
             if intent == "delay_inquiry" or "2" in user_input:
                 self.current_state = self.STATES['DELAY_INQUIRY']
-                return "I can help with delay predictions. First, which route are you on? (Norwich to London or London to Norwich)"
+                return "I can help with delay predictions. First, which route are you on? (Norwich to London or London to Norwich)"  # Return result
             elif intent == "booking" or "1" in user_input:
                 self.current_state = self.STATES['PARSE_BOOKING']
-                return "Please tell me about your journey. For example: 'I want to travel from Norwich to London tomorrow at 3pm'"
+                return "Please tell me about your journey. For example: 'I want to travel from Norwich to London tomorrow at 3pm'"  # Return result
             elif "3" in user_input or intent == "farewell":
                 self.current_state = self.STATES['FAREWELL']
-                return random.choice(self.farewells)
+                return random.choice(self.farewells)  # Return result
             else:
-                return "I didn't understand that. Please choose:\n1. Book tickets\n2. Check for delays\n3. Exit"
-
-        # COMPLEX DELAY HANDLING
-        elif intent == "complex_delay_inquiry":
-            # ... your existing complex‐delay logic here ...
-            return self.handle_complex_delay(user_input)
+                return "I didn't understand that. Please choose:\n1. Book tickets\n2. Check for delays\n3. Ask any other questions\n4. Exit"  # Return result
 
         # DELAY INQUIRY STATES
         elif self.current_state == self.STATES['DELAY_INQUIRY']:
-            return self.handle_delay_inquiry(user_input)
+            return self.handle_delay_inquiry(user_input)  # Return result
         elif self.current_state == self.STATES['GET_CURRENT_STATION']:
-            return self.handle_current_station(user_input)
+            return self.handle_current_station(user_input)  # Return result
         elif self.current_state == self.STATES['GET_DELAY_DURATION']:
-            return self.handle_delay_duration(user_input)
+            return self.handle_delay_duration(user_input)  # Return result
         elif self.current_state == self.STATES['GET_DESTINATION']:
-            return self.handle_destination_input(user_input)
+            return self.handle_destination_input(user_input)  # Return result
 
         # PARSE_BOOKING → extract details
         elif self.current_state == self.STATES['PARSE_BOOKING']:
@@ -1127,7 +1520,7 @@ class TrainTicketChatbotWithBooking:
                 if not missing:
                     # all core fields gathered; now ask about return
                     self.current_state = self.STATES['ASK_RETURN']
-                    return self.process_booking()  # shows summary + "Would you like a return ticket?"
+                    return self.process_booking()  # shows summary + "Would you like a return ticket?"  # Return result
                 else:
                     # still missing something
                     self.current_state = self.STATES['GET_MISSING_INFO']
@@ -1141,11 +1534,10 @@ class TrainTicketChatbotWithBooking:
                     if 'time' in extracted:
                         response += f"\n- Time: {extracted['time']}"
                     response += "\n\n" + self.generate_missing_prompt(missing)
-                    return response
-            return ("I couldn't understand your booking request. "
+                    return response  # Return result
+            return ("I couldn't understand your booking request. "  # Return result
                     "Please try something like: 'I want to travel from Norwich to London tomorrow at 3pm'")
 
-        # GET_MISSING_INFO → fill in any leftover fields
         elif self.current_state == self.STATES['GET_MISSING_INFO']:
             extracted, missing = self.extract_booking_info(user_input)
             if extracted:
@@ -1154,9 +1546,14 @@ class TrainTicketChatbotWithBooking:
                         self.booking_details[k] = v
                 self.missing_fields = missing
                 if not missing:
-                    # all done, confirm booking
-                    self.booking_details['confirmed'] = True
-                    return self.process_booking(confirm=True)
+                    # Instead of confirming immediately, transition to ASK_RETURN if not already handling return
+                    if not self.booking_details.get('is_return') and 'return_date' not in self.missing_fields:
+                        self.current_state = self.STATES['ASK_RETURN']
+                        return self.process_booking()  # Shows summary + asks about return ticket  # Return result
+                    else:
+                        # If handling return, confirm booking
+                        self.booking_details['confirmed'] = True
+                        return self.process_booking(confirm=True)  # Return result
                 else:
                     response = "I understood:"
                     if self.booking_details.get('origin'):
@@ -1167,39 +1564,83 @@ class TrainTicketChatbotWithBooking:
                         response += f"\n- Date: {self.booking_details['date']}"
                     if self.booking_details.get('time'):
                         response += f"\n- Time: {self.booking_details['time']}"
-                    # If return is in progress, prompt for missing return fields
-                    if 'return_date' in missing or 'return_time' in missing:
-                        response += "\n\n" + self.generate_missing_prompt(missing)
-                    return response
-            return "Please provide the missing information: " + self.generate_missing_prompt(self.missing_fields)
+                    response += "\n\n" + self.generate_missing_prompt(missing)
+                    return response  # Return result
+            return "Please provide the missing information: " + self.generate_missing_prompt(self.missing_fields)  # Return result
 
         # ASK_RETURN → single handler only
         elif self.current_state == self.STATES['ASK_RETURN']:
-            if user_input.lower() in ['yes', 'y']:
+            user_input_lower = user_input.lower().strip()
+            if user_input_lower in ['yes', 'y']:
                 self.booking_details['is_return'] = True
+                self.expecting_return_time = True  # <-- set the flag here
                 self.current_state = self.STATES['GET_MISSING_INFO']
                 self.missing_fields = ['return_date', 'return_time']
-                return "Sure—please provide your return date and time (e.g. 'June 6th at 4pm')"
-            elif user_input.lower() in ['no', 'n']:
+                return "Sure—please provide your return date and time (e.g. 'June 6th at 4pm')"  # Return result
+            elif user_input_lower in ['no', 'n']:
                 self.booking_details['is_return'] = False
+                # Explicitly clear return fields
+                self.booking_details['return_date'] = None
+                self.booking_details['return_time'] = None
+                self.booking_details['return_depart_type'] = None
+                self.booking_details['return_time_preference'] = None
                 self.booking_details['confirmed'] = True
-                return self.process_booking(confirm=True)
+                return self.process_booking(confirm=True)  # Return result
             else:
-                return "Please respond with 'yes' or 'no' to indicate if you want a return ticket."
+                return "Please answer 'yes' or 'no' to whether you want a return ticket."  # Return result
 
         # FAREWELL state
         elif self.current_state == self.STATES['FAREWELL']:
-            return random.choice(self.farewells)
+            if user_input.lower() in ['menu', 'options', 'back']:
+                self.current_state = self.STATES['GET_OPTION']
+                return self.options_prompt  # Return result
+            return random.choice(self.farewells)  # Return result
+        
 
         # Catch-all
-        return "Sorry, I didn't understand that."
+        return "Sorry, I didn't understand that."  # Return result
 
+
+    # --- Function: handle_current_station ---
+    def handle_current_station(self, user_input: str) -> str:
+        """Handle input for current station during delay prediction flow"""
+        is_valid, message = self.validate_station_on_route(
+            user_input,
+            self.delay_details['route']
+        )
+
+        if not is_valid:
+            # Try generating suggestions
+            suggestions = self.generate_station_suggestions(user_input, self.delay_details['route'])
+            if suggestions:
+                return f"{message}\nDid you mean: {', '.join(suggestions[:3])}?"  # Return result
+            return message  # Return result
+
+        self.delay_details['current_station'] = message  # This is the valid station code
+
+        # Ask for next piece of info
+        if not self.delay_details.get('reported_delay'):
+            self.current_state = self.STATES['GET_DELAY_DURATION']
+            return "How many minutes delayed is your train?"  # Return result
+        elif not self.delay_details.get('destination'):
+            self.current_state = self.STATES['GET_DESTINATION']
+            return "Which station is your destination?"  # Return result
+        else:
+            return self.make_delay_prediction()  # Return result
+
+
+    # --- Function: process_booking ---
     def process_booking(self, confirm=False):
+        # Ensure date is set if missing
+        if not self.booking_details.get('date'):
+            self.booking_details['date'] = (datetime.now() + timedelta(days=1)).strftime('%d/%m/%Y')
+
         summary = "Here's your journey summary:\n"
         summary += f"From: {self.get_station_name(self.booking_details['origin'])}\n"
         summary += f"To: {self.get_station_name(self.booking_details['destination'])}\n"
         summary += f"Date: {self.booking_details['date']}\n"
-        summary += f"Time: {self.booking_details['time']}\n"
+        time_label = "Arrive by" if self.booking_details['time_preference'] == 'by' else "Depart after"
+        summary += f"{time_label}: {self.booking_details['time']}\n"
         summary += f"Adults: {self.booking_details['adults']}\n"
         summary += f"Children: {self.booking_details['children']}\n"
 
@@ -1209,25 +1650,21 @@ class TrainTicketChatbotWithBooking:
 
         if confirm:
             try:
-                # Use "departing" by default for both outbound and return
-                depart_type = "departing"
-                return_type = "departing"
-
                 result = compare_ticket_prices(
                     origin=self.booking_details['origin'],
                     destination=self.booking_details['destination'],
                     depart_date=self.booking_details['date'],
                     depart_time=self.booking_details['time'],
-                    depart_type=depart_type,
+                    depart_type=self.booking_details['depart_type'],
+                    time_preference=self.booking_details['time_preference'],
                     is_return=self.booking_details.get('is_return', False),
-                    return_date=self.booking_details.get('return_date'),
-                    return_time=self.booking_details.get('return_time'),
-                    return_type=return_type,
+                    return_date=self.booking_details['return_date'],
+                    return_time=self.booking_details['return_time'],
+                    return_type=self.booking_details['depart_type'],
                     adults=self.booking_details['adults'],
                     children=self.booking_details['children']
                 )
 
-                # Format result
                 summary += "\n\n🧾 Ticket Comparison:\n"
                 if result['national_rail']['total_price'] is not None:
                     summary += f"🚆 National Rail: £{result['national_rail']['total_price']:.2f} → {result['national_rail']['url']}\n"
@@ -1240,22 +1677,26 @@ class TrainTicketChatbotWithBooking:
                     summary += "🚆 Thameslink: No result found.\n"
 
                 summary += f"\n💡 Verdict: {result['verdict']}"
-                self.current_state = self.STATES['FAREWELL']
-                return summary
+
+                # <-- Modify state transition here -->
+                self.current_state = self.STATES['GET_OPTION']
+                return summary + f"\n\n{self.options_prompt}"  # Return result
 
             except Exception as e:
-                return f"❌ Error during ticket search: {str(e)}"
+                return f"❌ Error during ticket search: {str(e)}"  # Return result
 
         if not self.booking_details.get('is_return'):
             self.current_state = self.STATES['ASK_RETURN']
-            return summary + "\nWould you like to book a return ticket? (yes/no)"
+            return summary + "\nWould you like to book a return ticket? (yes/no)"  # Return result
 
-        return summary + "\nPlease provide your return date and time (e.g. 'June 6th at 4pm')"
+        return summary + "\nPlease provide your return date and time (e.g. 'June 6th at 4pm')"  # Return result
 
+
+    # --- Function: calculate_normal_travel_times ---
     def calculate_normal_travel_times(self, route):
         """Calculate normal travel times between stations for a route"""
         if route not in self.delay_data or not isinstance(self.delay_data[route], pd.DataFrame):
-            return None
+            return None  # Return result
 
         df = self.delay_data[route].copy()
         normal_times = {}
@@ -1291,9 +1732,9 @@ class TrainTicketChatbotWithBooking:
         # Check if the required columns exist
         missing_cols = [col for col in time_cols.values() if col not in df.columns]
         if missing_cols:
-            print(f"Warning: Could not find time columns in {route} data. Tried: {time_cols}")
-            print(f"Actual columns: {df.columns.tolist()}")
-            return None
+            print(f"Warning: Could not find time columns in {route} data. Tried: {time_cols}")  # Debug/logging output
+            print(f"Actual columns: {df.columns.tolist()}")  # Debug/logging output
+            return None  # Return result
 
         # Convert time columns to datetime.time objects
         for col in time_cols.values():
@@ -1324,13 +1765,15 @@ class TrainTicketChatbotWithBooking:
 
             if not merged.empty:
                 # Calculate travel time in minutes, handling NaT values
+
+    # --- Function: calculate_time ---
                 def calculate_time(row):
                     try:
                         dep_time = row['departure_time']
                         arr_time = row['arrival_time']
 
                         if pd.isna(dep_time) or pd.isna(arr_time):
-                            return np.nan
+                            return np.nan  # Return result
 
                         # Create datetime objects for calculation
                         dep_dt = datetime.combine(datetime.today(), dep_time)
@@ -1340,10 +1783,10 @@ class TrainTicketChatbotWithBooking:
                         if arr_dt < dep_dt:
                             arr_dt += timedelta(days=1)
 
-                        return (arr_dt - dep_dt).total_seconds() / 60
+                        return (arr_dt - dep_dt).total_seconds() / 60  # Return result
                     except Exception as e:
-                        print(f"Error calculating time: {e}")
-                        return np.nan
+                        print(f"Error calculating time: {e}")  # Debug/logging output
+                        return np.nan  # Return result
 
                 merged['travel_time'] = merged.apply(calculate_time, axis=1)
 
@@ -1353,30 +1796,32 @@ class TrainTicketChatbotWithBooking:
                 if not merged.empty:
                     # Store median travel time
                     normal_times[(from_stn, to_stn)] = merged['travel_time'].median()
-                    print(f"Normal time {from_stn}->{to_stn}: {normal_times[(from_stn, to_stn)]:.1f} minutes")
+                    print(f"Normal time {from_stn}->{to_stn}: {normal_times[(from_stn, to_stn)]:.1f} minutes")  # Debug/logging output
                 else:
-                    print(f"No valid time data for {from_stn}->{to_stn}")
+                    print(f"No valid time data for {from_stn}->{to_stn}")  # Debug/logging output
                     normal_times[(from_stn, to_stn)] = 30  # Default fallback
             else:
-                print(f"No matching services for {from_stn}->{to_stn}")
+                print(f"No matching services for {from_stn}->{to_stn}")  # Debug/logging output
                 normal_times[(from_stn, to_stn)] = 30  # Default fallback
 
-        return normal_times
+        return normal_times  # Return result
 
+
+    # --- Function: predict_arrival ---
     def predict_arrival(self, route, current_station, delay, destination):
         """Predict arrival time with fallback behavior"""
         normal_times = self.normal_travel_times.get(route, {})
         stations = self.station_sequences.get(route, [])
 
         if not normal_times:
-            print(f"Warning: No normal travel times available for route {route}")
+            print(f"Warning: No normal travel times available for route {route}")  # Debug/logging output
             # Create default normal times
             normal_times = {(stations[i], stations[i + 1]): 30
                             for i in range(len(stations) - 1)}
 
         if current_station not in stations or destination not in stations:
-            print(f"Warning: Stations not in route {route}")
-            return None
+            print(f"Warning: Stations not in route {route}")  # Debug/logging output
+            return None  # Return result
 
         current_idx = stations.index(current_station)
         dest_idx = stations.index(destination)
@@ -1405,12 +1850,14 @@ class TrainTicketChatbotWithBooking:
             f"Estimated arrival time: {estimated_arrival.strftime('%H:%M')}"
         )
 
-        return output
+        return output  # Return result
 
+
+    # --- Function: calculate_schedule_times ---
     def calculate_schedule_times(self, route, stations):
         """Calculate typical schedule times between stations"""
         if route not in self.delay_data or not isinstance(self.delay_data[route], pd.DataFrame):
-            return None
+            return None  # Return result
 
         df = self.delay_data[route]
         schedule_times = [0]  # Start at 0 minutes for first station
@@ -1443,11 +1890,15 @@ class TrainTicketChatbotWithBooking:
                 # Fallback: use 30 minutes between stations if no data
                 schedule_times.append(schedule_times[-1] + 30)
 
-        return schedule_times
+        return schedule_times  # Return result
 
+
+    # --- Function: round_down_to_quarter ---
     def round_down_to_quarter(self, minute):
-        return str((int(minute) // 15) * 15).zfill(2)
+        return str((int(minute) // 15) * 15).zfill(2)  # Return result
 
+
+    # --- Function: build_url ---
     def build_url(self):
         """Build the booking URL from collected details"""
         origin = self.booking_details['origin']
@@ -1458,6 +1909,8 @@ class TrainTicketChatbotWithBooking:
         children = self.booking_details['children']
         return_date_str = self.booking_details['return_date']
         return_time_str = self.booking_details['return_time']
+        depart_type = self.booking_details['depart_type']
+        time_preference = self.booking_details['time_preference']
 
         day, month, year = date_str.split("/")
         hour, minute = time_str.split(":")
@@ -1468,7 +1921,7 @@ class TrainTicketChatbotWithBooking:
         params = {
             "origin": origin,
             "destination": destination,
-            "leavingType": "departing",
+            "leavingType": depart_type,
             "leavingDate": leaving_date,
             "leavingHour": leaving_hour,
             "leavingMin": minute,
@@ -1477,18 +1930,38 @@ class TrainTicketChatbotWithBooking:
             "extraTime": "0"
         }
 
-        url = "https://www.nationalrail.co.uk/journey-planner/?" + urlencode(params)
-        return url, int(hour), int(minute)
+        if time_preference == 'by':
+            params['leavingType'] = 'arriving'
+        elif time_preference == 'after':
+            params['leavingType'] = 'departing'
 
+        if return_date_str and return_time_str:
+            return_day, return_month, return_year = return_date_str.split("/")
+            return_hour, return_minute = return_time_str.split(":")
+            return_minute = self.round_down_to_quarter(return_minute)
+            params.update({
+                "returningType": depart_type,
+                "returningDate": f"{return_day}{return_month}{return_year[2:]}",
+                "returningHour": return_hour.zfill(2),
+                "returningMin": return_minute
+            })
+
+        url = "https://www.nationalrail.co.uk/journey-planner/?" + urlencode(params)
+        return url, int(hour), int(minute)  # Return result
+
+
+    # --- Function: accept_cookies_if_present ---
     def accept_cookies_if_present(self, driver):
         try:
             wait = WebDriverWait(driver, 10)
             reject_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Reject All')]")))
             reject_btn.click()
-            print(" Cookie popup rejected.")
+            print(" Cookie popup rejected.")  # Debug/logging output
         except:
-            print(" No cookie popup appeared or already handled.")
+            print(" No cookie popup appeared or already handled.")  # Debug/logging output
 
+
+    # --- Function: extract_cheapest_ticket ---
     def extract_cheapest_ticket(self, driver, target_hour, target_minute):
         time.sleep(10)
         cards = driver.find_elements(By.CSS_SELECTOR, "section[data-testid^='result-card-section-outward']")
@@ -1520,8 +1993,10 @@ class TrainTicketChatbotWithBooking:
             except Exception:
                 continue
 
-        return best_match
+        return best_match  # Return result
 
+
+    # --- Function: select_cheapest_outward_journey ---
     def select_cheapest_outward_journey(self, driver, target_hour, target_minute):
         """Select cheapest outward journey within time window"""
         time.sleep(10)
@@ -1558,11 +2033,13 @@ class TrainTicketChatbotWithBooking:
             try:
                 button = best_card.find_element(By.XPATH, ".//input[@type='button']")
                 driver.execute_script("arguments[0].click();", button)
-                return best_time, lowest_price
+                return best_time, lowest_price  # Return result
             except Exception:
-                return None, None
-        return None, None
+                return None, None  # Return result
+        return None, None  # Return result
 
+
+    # --- Function: select_return_journey ---
     def select_return_journey(self, driver, return_time_str):
         """Select return journey within time window"""
         user_return_time = datetime.strptime(return_time_str, "%H:%M")
@@ -1598,22 +2075,22 @@ class TrainTicketChatbotWithBooking:
             try:
                 select_btn = best_option.find_element(By.XPATH, './/input[@type="button"]')
                 driver.execute_script("arguments[0].click();", select_btn)
-                return best_time, best_price
+                return best_time, best_price  # Return result
             except Exception:
-                return None, None
-        return None, None
+                return None, None  # Return result
+        return None, None  # Return result
 
 
 if __name__ == "__main__":
-    print("Initializing Train Ticket Chatbot...")
+    print("Initializing Train Ticket Chatbot...")  # Debug/logging output
     chatbot = TrainTicketChatbotWithBooking()
-    print("\nLoading and analyzing delay data...")
+    print("\nLoading and analyzing delay data...")  # Debug/logging output
     chatbot.load_delay_data()
-    print("\nWelcome to TrainBot! Type 'exit' to quit at any time.")
+    print("\nWelcome to TrainBot! Type 'exit' to quit at any time.")  # Debug/logging output
     while True:
         user_input = input("\nYou: ").strip()
         if user_input.lower() in ['exit', 'quit', 'bye', 'goodbye']:
-            print("TrainBot:", random.choice(chatbot.farewells))
+            print("TrainBot:", random.choice(chatbot.farewells))  # Debug/logging output
             break
         response = chatbot.generate_response(user_input)
-        print("TrainBot:", response)
+        print("TrainBot:", response)  # Debug/logging output
