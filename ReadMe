@@ -1,0 +1,9 @@
+Download all the cav file and keep it in the folder
+First run the chatbotdb.sql in pgAdmin 4
+Then take the database infromation and keep it in the server.js
+Run the run_staff_chatbot.py and wait for the link
+Run the run_customer_chatbot.py wait for the link
+Then run the server.js and click on the link
+
+Webscrapers can be ran seperately by removing the comments in main
+Chatbots can also be ran seperately
