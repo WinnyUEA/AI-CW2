@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS stations_typed;
-
 -- Stores user info who interacted with the chatbot
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
@@ -14,7 +12,6 @@ CREATE TABLE chat_history (
     message TEXT NOT NULL,
     sender_type VARCHAR(10) CHECK (sender_type IN ('user', 'bot')),
     sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    account_type VARCHAR(10) CHECK (account_type IN ('user', 'staff')) NOT NULL
 );
 
 
@@ -27,7 +24,7 @@ CREATE TABLE stations(
     tiploc_code VARCHAR(10),
     code TEXT
 );
-SELECT * FROM stations;
+
 
 -- Logical routes between two stations 
 CREATE TABLE train_routes (
@@ -73,7 +70,7 @@ CREATE TABLE contingency_guidelines (
     action_plan TEXT,
     support_contact TEXT
 );
-
+-- Table for staff
 CREATE TABLE staff (
     id SERIAL PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
