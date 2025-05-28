@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>TrainBot Chat</title>
+  <title>CheapXpress Chat</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link id="theme-style" rel="stylesheet" href="" />
   <script>
@@ -19,14 +19,15 @@
     <!-- Header -->
     <header>
       <div class="chat-header-container">
-        <h1>🚄 TrainBot</h1>
+        <h1>CheapXpress</h1>
         <div class="header-controls">
           <select id="themeSelector" onchange="setTheme(this.value)">
             <option value="light">Light Theme</option>
             <option value="dark">Dark Theme</option>
           </select>
-          <button id="loginBtn" onclick="window.location.href='/login.html'">Login</button>
-          <button id="signupBtn" onclick="window.location.href='/signup.html'">Signup</button>
+          <!--  button routes -->
+          <button id="loginBtn" onclick="window.location.href='/login'">Login</button>
+          <button id="signupBtn" onclick="window.location.href='/signup'">Signup</button>
           <button id="logoutBtn" style="display: none;">Logout</button>
         </div>
       </div>
@@ -46,7 +47,7 @@
   </div>
 
   <!-- Toast Notification -->
-  <div id="toast" class="toast">🔒 Please log in to chat with TrainBot</div>
+  <div id="toast" class="toast"> Please log in to chat with CheapXpress</div>
 
   <script>
     let currentUserType = 'user';
@@ -135,20 +136,19 @@
           if (!isLoggedIn) {
             input.addEventListener("click", showToast);
             sendBtn.addEventListener("click", showToast);
-            welcomeBox.innerHTML = "Welcome to TrainBot. Please log in to use the chatbot.";
+            welcomeBox.innerHTML = "Welcome to CheapXpress. Please log in to use the chatbot.";
           } else {
             input.disabled = false;
             sendBtn.disabled = false;
 
-            // Remove toast triggers
             input.removeEventListener("click", showToast);
             sendBtn.removeEventListener("click", showToast);
 
             if (currentUserType === 'staff') {
-              document.getElementById("chatbox").innerHTML = "<div class='chat-message bot'>👷‍♂️ Staff Chatbot ready. Ask Emergency-related questions.</div>";
+              document.getElementById("chatbox").innerHTML = "<div class='chat-message bot'> This Chatbot gives Emergency and Disruption Details.</div>";
               welcomeBox.innerHTML = "Welcome back, staff member!";
             } else {
-              welcomeBox.innerHTML = "Welcome back! Ask TrainBot anything about your journey.";
+              welcomeBox.innerHTML = "Welcome back! Ask CheapXpress anything about your journey.";
               loadChatHistory();
             }
 
