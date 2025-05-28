@@ -1,0 +1,54 @@
+from NationalRailWebScraper import run_national_scraper
+from ThamesWebScraper import run_thames_scraper
+
+def compare_ticket_prices(
+    origin, destination,
+    depart_date, depart_time, depart_type,
+    time_preference='at', is_return=False, return_date=None, return_time=None, return_type="departing", adults="1", children="0"
+):
+    """
+    Compare ticket prices between National Rail and Thameslink scrapers,
+    passing through user's time_preference ('at', 'by', 'after').
+    """
+    print("💬 Please wait, the result will be with you soon…\n")
+    #the national rial is run
+    print("National rails Runnning")
+    nationalRail_Link_Results = run_national_scraper(
+        origin, destination,
+        depart_date, depart_time, depart_type,
+        time_preference=time_preference,
+        is_return=is_return, return_date=return_date,
+        return_time=return_time, return_type=return_type,
+        adults=adults, children=children
+    )
+
+    #The tahmeslink is ran 
+    print("ThamesLink Running")
+    thames_Link_Results = run_thames_scraper(
+        origin, destination,
+        depart_date, depart_time, depart_type, time_preference=time_preference, 
+        is_return=is_return, return_date=return_date, return_time=return_time, return_type=return_type, adults=adults, children=children
+    )
+
+    #See the cheapest tcciket 
+    verdict = "Prices could not be compared"
+    price_natinal = nationalRail_Link_Results.get('total_price')
+    price_thames = thames_Link_Results.get('total_price')
+
+    if price_natinal is not None and price_thames is not None:
+        if price_natinal < price_thames:
+            verdict = "National Rail has the cheapest ticket."
+        elif price_thames < price_natinal:
+            verdict = "Thameslink has the cheapest ticket."
+        else:
+            verdict = "Both websites have the same price ticket"
+    elif price_natinal is not None:
+        verdict = "Only the National Rail gave prices "
+    elif price_thames is not None:
+        verdict = "Only Thameslink gave prices"
+
+    return {
+        "national_rail": nationalRail_Link_Results,
+        "thameslink": thames_Link_Results,
+        "verdict": verdict
+    }
