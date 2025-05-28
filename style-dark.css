@@ -113,6 +113,9 @@ header {
   line-height: 1.5;
   white-space: pre-wrap;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .chat-message.user {
@@ -131,6 +134,7 @@ header {
   color: #0B0C10;
   font-weight: bold;
   text-decoration: underline;
+  word-break: break-word;
 }
 
 /* === CHAT FOOTER === */
@@ -260,4 +264,3 @@ a.back {
   opacity: 0.95;
   visibility: visible;
 }
-
