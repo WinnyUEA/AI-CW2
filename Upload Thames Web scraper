@@ -302,11 +302,7 @@ def run_thames_scraper(
             time_preference=time_preference
         )
     #Lauch
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')  # Run browser in headless mode
-    options.add_argument('--disable-gpu')  # Disable GPU acceleration
-    options.add_argument('--no-sandbox')  # Bypass OS security model
-    options.add_argument('--window-size=1920x1080')  # Ensure consistent rendering
+    driver = webdriver.Chrome()
     driver = webdriver.Chrome(options=options)
 
     driver.get(url)
